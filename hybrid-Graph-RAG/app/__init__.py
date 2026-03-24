@@ -1,0 +1,1 @@
+"""Hybrid GraphRAG application package."""

@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}메시지 상세 | Hybrid GraphRAG{% endblock %}
+{% block content %}
+<section class="panel">
+  <h1>메시지 상세</h1>
+  <article class="detail-block">
+    <strong>{{ detail.content }}</strong>
+    <p class="meta">{{ detail.date }} {{ detail.time }} · {{ detail.room_name }} · {{ detail.user_name }}</p>
+    <p class="muted">message_id: {{ detail.message_id }}</p>
+  </article>
+</section>
+
+<section class="panel">
+  <h2>컨텍스트</h2>
+  <div class="context-group">
+    <h3>같은 방 이전 메시지</h3>
+    <ul>
+      {% for item in detail.context.previous_in_room %}
+        <li>{{ item.occurred_at }} · {{ item.content }}</li>
+      {% else %}
+        <li class="muted">없음</li>
+      {% endfor %}
+    </ul>
+  </div>
+  <div class="context-group">
+    <h3>같은 방 다음 메시지</h3>
+    <ul>
+      {% for item in detail.context.next_in_room %}
+        <li>{{ item.occurred_at }} · {{ item.content }}</li>
+      {% else %}
+        <li class="muted">없음</li>
+      {% endfor %}
+    </ul>
+  </div>
+  <div class="context-group">
+    <h3>같은 사용자 최근 메시지</h3>
+    <ul>
+      {% for item in detail.context.recent_by_user %}
+        <li>{{ item.occurred_at }} · {{ item.content }}</li>
+      {% else %}
+        <li class="muted">없음</li>
+      {% endfor %}
+    </ul>
+  </div>
+</section>
+{% endblock %}

@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}인사이트 | Hybrid GraphRAG{% endblock %}
+{% block content %}
+<section class="panel">
+  <h1>인사이트</h1>
+  <form method="get" action="/insights" class="form-grid">
+    <label>
+      <span>시작일</span>
+      <input type="date" name="date_from" value="{{ date_from }}" />
+    </label>
+    <label>
+      <span>종료일</span>
+      <input type="date" name="date_to" value="{{ date_to }}" />
+    </label>
+    <label>
+      <span>채팅방</span>
+      <input type="text" name="rooms" value="{{ rooms }}" placeholder="쉼표로 구분" />
+    </label>
+    <label>
+      <span>사용자</span>
+      <input type="text" name="users" value="{{ users }}" placeholder="쉼표로 구분" />
+    </label>
+    <div class="actions">
+      <button type="submit">적용</button>
+    </div>
+  </form>
+</section>
+
+<div class="content-grid">
+  <section class="panel">
+    <h2>기간별 메시지 수</h2>
+    <ul class="simple-list">
+      {% for item in insights.messages_by_date %}
+        <li><strong>{{ item.key }}</strong><span>{{ item.count }}</span></li>
+      {% else %}
+        <li class="muted">데이터 없음</li>
+      {% endfor %}
+    </ul>
+  </section>
+
+  <section class="panel">
+    <h2>상위 채팅방</h2>
+    <ul class="simple-list">
+      {% for item in insights.top_rooms %}
+        <li><strong>{{ item.key }}</strong><span>{{ item.count }}</span></li>
+      {% else %}
+        <li class="muted">데이터 없음</li>
+      {% endfor %}
+    </ul>
+  </section>
+
+  <section class="panel">
+    <h2>상위 사용자</h2>
+    <ul class="simple-list">
+      {% for item in insights.top_users %}
+        <li><strong>{{ item.key }}</strong><span>{{ item.count }}</span></li>
+      {% else %}
+        <li class="muted">데이터 없음</li>
+      {% endfor %}
+    </ul>
+  </section>
+
+  <section class="panel">
+    <h2>운영 키워드 대표 메시지</h2>
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>키워드</th>
+          <th>시각</th>
+          <th>방</th>
+          <th>사용자</th>
+          <th>내용</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in insights.keyword_samples %}
+          <tr>
+            <td>{{ item.keyword }}</td>
+            <td>{{ item.occurred_at }}</td>
+            <td>{{ item.room_name }}</td>
+            <td>{{ item.user_name }}</td>
+            <td>{{ item.content }}</td>
+          </tr>
+        {% else %}
+          <tr>
+            <td colspan="5" class="muted">데이터 없음</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+</div>
+{% endblock %}

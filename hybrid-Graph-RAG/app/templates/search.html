@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block title %}검색 | Hybrid GraphRAG{% endblock %}
+{% block content %}
+<section class="panel">
+  <h1>메시지 검색</h1>
+  <form method="get" action="/" class="form-grid">
+    <label>
+      <span>질의</span>
+      <input type="text" name="q" value="{{ query }}" placeholder="예: 배포 관련 내용" />
+    </label>
+    <label>
+      <span>시작일</span>
+      <input type="date" name="date_from" value="{{ date_from }}" />
+    </label>
+    <label>
+      <span>종료일</span>
+      <input type="date" name="date_to" value="{{ date_to }}" />
+    </label>
+    <label>
+      <span>채팅방</span>
+      <input type="text" name="rooms" value="{{ rooms }}" placeholder="쉼표로 구분" />
+    </label>
+    <label>
+      <span>사용자</span>
+      <input type="text" name="users" value="{{ users }}" placeholder="쉼표로 구분" />
+    </label>
+    <div class="actions">
+      <button type="submit">검색</button>
+    </div>
+  </form>
+</section>
+
+<div class="content-grid">
+  <section class="panel">
+    <h2>검색 결과</h2>
+    {% if search_response %}
+      <p class="muted">총 {{ search_response.total_hits }}건</p>
+      <ul class="result-list">
+        {% for result in search_response.results %}
+          <li class="result-card">
+            <div class="result-head">
+              <strong>{{ result.content }}</strong>
+              <span class="score">RRF {{ "%.4f"|format(result.scores.rrf) }}</span>
+            </div>
+            <p class="meta">{{ result.date }} {{ result.time }} · {{ result.room_name }} · {{ result.user_name }}</p>
+            <div class="links">
+              <a href="/?q={{ query }}&date_from={{ date_from }}&date_to={{ date_to }}&rooms={{ rooms }}&users={{ users }}&message_id={{ result.message_id }}">같은 페이지에서 보기</a>
+              <a href="/messages/{{ result.message_id }}">상세 페이지</a>
+            </div>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="muted">질의를 입력하면 검색 결과가 표시됩니다.</p>
+    {% endif %}
+  </section>
+
+  <section class="panel">
+    <h2>상세 패널</h2>
+    {% if detail_response %}
+      <article class="detail-block">
+        <strong>{{ detail_response.content }}</strong>
+        <p class="meta">{{ detail_response.date }} {{ detail_response.time }} · {{ detail_response.room_name }} · {{ detail_response.user_name }}</p>
+      </article>
+
+      <div class="context-group">
+        <h3>같은 방 이전 메시지</h3>
+        <ul>
+          {% for item in detail_response.context.previous_in_room %}
+            <li>{{ item.occurred_at }} · {{ item.content }}</li>
+          {% else %}
+            <li class="muted">없음</li>
+          {% endfor %}
+        </ul>
+      </div>
+
+      <div class="context-group">
+        <h3>같은 방 다음 메시지</h3>
+        <ul>
+          {% for item in detail_response.context.next_in_room %}
+            <li>{{ item.occurred_at }} · {{ item.content }}</li>
+          {% else %}
+            <li class="muted">없음</li>
+          {% endfor %}
+        </ul>
+      </div>
+
+      <div class="context-group">
+        <h3>같은 사용자 최근 메시지</h3>
+        <ul>
+          {% for item in detail_response.context.recent_by_user %}
+            <li>{{ item.occurred_at }} · {{ item.content }}</li>
+          {% else %}
+            <li class="muted">없음</li>
+          {% endfor %}
+        </ul>
+      </div>
+
+      <div class="context-group">
+        <h3>같은 날짜 같은 방 샘플</h3>
+        <ul>
+          {% for item in detail_response.context.same_day_same_room_samples %}
+            <li>{{ item.occurred_at }} · {{ item.content }}</li>
+          {% else %}
+            <li class="muted">없음</li>
+          {% endfor %}
+        </ul>
+      </div>
+    {% else %}
+      <p class="muted">결과에서 메시지를 선택하면 상세 컨텍스트가 보입니다.</p>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

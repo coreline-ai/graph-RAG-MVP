@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Simple-Graph-RAG</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+        background: #f4f6fb;
+        color: #1f2937;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background:
+          radial-gradient(circle at top right, rgba(14, 165, 233, 0.16), transparent 30%),
+          linear-gradient(180deg, #f8fbff 0%, #eef2ff 100%);
+      }
+
+      main {
+        max-width: 1080px;
+        margin: 0 auto;
+        padding: 40px 20px 80px;
+      }
+
+      h1 {
+        margin: 0 0 8px;
+        font-size: 2.4rem;
+      }
+
+      p {
+        margin: 0;
+        color: #4b5563;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 20px;
+        margin-top: 28px;
+      }
+
+      .card {
+        background: rgba(255, 255, 255, 0.92);
+        border: 1px solid rgba(148, 163, 184, 0.25);
+        border-radius: 20px;
+        padding: 20px;
+        box-shadow: 0 20px 45px rgba(15, 23, 42, 0.08);
+        backdrop-filter: blur(12px);
+      }
+
+      textarea,
+      input {
+        width: 100%;
+        padding: 12px 14px;
+        margin-top: 10px;
+        border: 1px solid #cbd5e1;
+        border-radius: 12px;
+        font: inherit;
+        background: #fff;
+      }
+
+      textarea {
+        min-height: 180px;
+        resize: vertical;
+      }
+
+      button {
+        margin-top: 14px;
+        padding: 12px 16px;
+        border: 0;
+        border-radius: 999px;
+        background: linear-gradient(135deg, #0f766e, #0284c7);
+        color: #fff;
+        font: inherit;
+        font-weight: 600;
+        cursor: pointer;
+      }
+
+      pre {
+        margin: 14px 0 0;
+        padding: 14px;
+        background: #0f172a;
+        color: #e2e8f0;
+        border-radius: 14px;
+        overflow: auto;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Simple-Graph-RAG</h1>
+      <p>Manual smoke-test surface for document ingest, query, and health.</p>
+
+      <section class="grid">
+        <article class="card">
+          <h2>Health</h2>
+          <button id="healthButton" type="button">Fetch /health</button>
+          <pre id="healthOutput">No request yet.</pre>
+        </article>
+
+        <article class="card">
+          <h2>Ingest</h2>
+          <input id="filename" type="text" value="chat_logs_100.txt" />
+          <textarea id="content" placeholder="Paste chat logs here"></textarea>
+          <button id="ingestButton" type="button">POST /documents</button>
+          <pre id="ingestOutput">No request yet.</pre>
+        </article>
+
+        <article class="card">
+          <h2>Query</h2>
+          <input id="question" type="text" value="2024-01-15 general 채널에서 어떤 논의가 있었나?" />
+          <input id="scopes" type="text" value="public" />
+          <button id="queryButton" type="button">POST /query</button>
+          <pre id="queryOutput">No request yet.</pre>
+        </article>
+      </section>
+    </main>
+
+    <script>
+      async function requestJson(url, options) {
+        const response = await fetch(url, options);
+        const body = await response.json();
+        return JSON.stringify({ status: response.status, body }, null, 2);
+      }
+
+      document.getElementById("healthButton").addEventListener("click", async () => {
+        document.getElementById("healthOutput").textContent = await requestJson("/health");
+      });
+
+      document.getElementById("ingestButton").addEventListener("click", async () => {
+        const payload = {
+          filename: document.getElementById("filename").value,
+          content: document.getElementById("content").value,
+          default_access_scopes: ["public"],
+          source: "manual-ui"
+        };
+        document.getElementById("ingestOutput").textContent = await requestJson("/documents", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+      });
+
+      document.getElementById("queryButton").addEventListener("click", async () => {
+        const payload = {
+          question: document.getElementById("question").value,
+          top_k: 5
+        };
+        document.getElementById("queryOutput").textContent = await requestJson("/query", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Access-Scopes": document.getElementById("scopes").value
+          },
+          body: JSON.stringify(payload)
+        });
+      });
+    </script>
+  </body>
+</html>

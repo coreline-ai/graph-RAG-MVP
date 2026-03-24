@@ -1,0 +1,44 @@
+services:
+  neo4j:
+    image: neo4j:5.18.1
+    container_name: hybrid-graphrag-neo4j
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    environment:
+      NEO4J_AUTH: neo4j/password
+      NEO4J_server_memory_heap_initial__size: 64m
+      NEO4J_server_memory_heap_max__size: 64m
+      NEO4J_server_memory_pagecache_size: 16m
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: hybrid-graphrag-app
+    depends_on:
+      - neo4j
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+    environment:
+      APP_HOST: 0.0.0.0
+      APP_PORT: 8000
+      NEO4J_URI: bolt://neo4j:7687
+      NEO4J_USERNAME: neo4j
+      NEO4J_PASSWORD: password
+      NEO4J_DATABASE: neo4j
+      EMBEDDING_MODEL_NAME: BAAI/bge-m3
+      EMBEDDING_DEVICE: cpu
+      EMBEDDING_BATCH_SIZE: 128
+      DATA_DIR: /app/data
+      LOG_DIR: /app/logs
+    command: ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+volumes:
+  neo4j_data:
+  neo4j_logs:

@@ -1,0 +1,35 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: simple-graph-rag-postgres
+    environment:
+      POSTGRES_DB: graph_rag
+      POSTGRES_USER: graph_rag
+      POSTGRES_PASSWORD: graph_rag
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U graph_rag -d graph_rag"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  neo4j:
+    image: neo4j:5.22
+    container_name: simple-graph-rag-neo4j
+    environment:
+      NEO4J_AUTH: neo4j/graph-rag-password
+      NEO4J_server_memory_heap_initial__size: 128m
+      NEO4J_server_memory_heap_max__size: 128m
+      NEO4J_server_memory_pagecache_size: 64m
+    ports:
+      - "8747:7474"
+      - "8768:7687"
+    volumes:
+      - neo4j_data:/data
+
+volumes:
+  postgres_data:
+  neo4j_data:
