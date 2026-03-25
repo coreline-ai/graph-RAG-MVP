@@ -6,6 +6,7 @@ from datetime import date
 from typing import Any
 
 import psycopg
+from psycopg_pool import ConnectionPool
 from pgvector import Vector
 from pgvector.psycopg import register_vector
 from psycopg.rows import dict_row
@@ -14,24 +15,36 @@ from psycopg.types.json import Jsonb
 from app.config import Settings
 from app.schemas import ChunkRecord, DocumentMetadata, QueryFilters, RetrievedChunk
 
+_ALLOWED_DISTINCT_FIELDS = frozenset({"channel", "user_name"})
+
 
 class PostgresVectorStore:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
+        self._pool: ConnectionPool | None = None
 
-    def _connect(self, *, register_pgvector: bool = True) -> psycopg.Connection:
-        connection = psycopg.connect(
-            self.settings.postgres_dsn,
-            row_factory=dict_row,
-            autocommit=True,
-        )
-        if register_pgvector:
-            register_vector(connection)
-        return connection
+    def _ensure_pool(self) -> ConnectionPool:
+        if self._pool is None:
+            self._pool = ConnectionPool(
+                self.settings.postgres_dsn,
+                min_size=2,
+                max_size=10,
+                kwargs={"row_factory": dict_row, "autocommit": True},
+                configure=self._configure_connection,
+            )
+        return self._pool
+
+    @staticmethod
+    def _configure_connection(connection: psycopg.Connection) -> None:
+        register_vector(connection)
 
     def _bootstrap_sync(self) -> None:
         table = self.settings.pgvector_table
-        with self._connect(register_pgvector=False) as connection:
+        with psycopg.connect(
+            self.settings.postgres_dsn,
+            row_factory=dict_row,
+            autocommit=True,
+        ) as connection:
             connection.execute("CREATE EXTENSION IF NOT EXISTS vector;")
             register_vector(connection)
             connection.execute(
@@ -83,10 +96,12 @@ class PostgresVectorStore:
 
     async def bootstrap(self) -> None:
         await asyncio.to_thread(self._bootstrap_sync)
+        await asyncio.to_thread(self._ensure_pool)
 
     def _healthcheck_sync(self) -> str:
         try:
-            with self._connect() as connection:
+            pool = self._ensure_pool()
+            with pool.connection() as connection:
                 connection.execute("SELECT 1;").fetchone()
         except Exception as exc:  # pragma: no cover - depends on runtime infra
             return f"error:{exc}"
@@ -96,7 +111,8 @@ class PostgresVectorStore:
         return await asyncio.to_thread(self._healthcheck_sync)
 
     def _upsert_document_sync(self, document: DocumentMetadata) -> None:
-        with self._connect() as connection:
+        pool = self._ensure_pool()
+        with pool.connection() as connection:
             connection.execute(
                 """
                 INSERT INTO documents (
@@ -131,7 +147,8 @@ class PostgresVectorStore:
         await asyncio.to_thread(self._upsert_document_sync, document)
 
     def _list_documents_sync(self) -> list[DocumentMetadata]:
-        with self._connect() as connection:
+        pool = self._ensure_pool()
+        with pool.connection() as connection:
             rows = connection.execute(
                 """
                 SELECT
@@ -152,7 +169,8 @@ class PostgresVectorStore:
         return await asyncio.to_thread(self._list_documents_sync)
 
     def _get_document_sync(self, document_id: str) -> DocumentMetadata | None:
-        with self._connect() as connection:
+        pool = self._ensure_pool()
+        with pool.connection() as connection:
             row = connection.execute(
                 """
                 SELECT
@@ -175,7 +193,8 @@ class PostgresVectorStore:
 
     def _delete_document_sync(self, document_id: str) -> bool:
         table = self.settings.pgvector_table
-        with self._connect() as connection:
+        pool = self._ensure_pool()
+        with pool.connection() as connection:
             connection.execute(f"DELETE FROM {table} WHERE document_id = %s;", (document_id,))
             result = connection.execute(
                 "DELETE FROM documents WHERE document_id = %s;",
@@ -194,47 +213,50 @@ class PostgresVectorStore:
         if not chunks:
             return
         table = self.settings.pgvector_table
-        with self._connect() as connection:
-            for chunk, embedding in zip(chunks, embeddings, strict=True):
-                connection.execute(
-                    f"""
-                    INSERT INTO {table} (
-                        chunk_id,
-                        document_id,
-                        channel,
-                        user_name,
-                        message_date,
-                        message_time,
-                        access_scopes,
-                        chunk_text,
-                        embedding,
-                        metadata
-                    )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    ON CONFLICT (chunk_id) DO UPDATE SET
-                        document_id = EXCLUDED.document_id,
-                        channel = EXCLUDED.channel,
-                        user_name = EXCLUDED.user_name,
-                        message_date = EXCLUDED.message_date,
-                        message_time = EXCLUDED.message_time,
-                        access_scopes = EXCLUDED.access_scopes,
-                        chunk_text = EXCLUDED.chunk_text,
-                        embedding = EXCLUDED.embedding,
-                        metadata = EXCLUDED.metadata;
-                    """,
-                    (
-                        chunk.chunk_id,
-                        chunk.document_id,
-                        chunk.channel,
-                        chunk.user_name,
-                        chunk.message_date,
-                        chunk.message_time,
-                        chunk.access_scopes,
-                        chunk.chunk_text,
-                        embedding,
-                        Jsonb(chunk.metadata),
-                    ),
-                )
+        sql = f"""
+            INSERT INTO {table} (
+                chunk_id,
+                document_id,
+                channel,
+                user_name,
+                message_date,
+                message_time,
+                access_scopes,
+                chunk_text,
+                embedding,
+                metadata
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (chunk_id) DO UPDATE SET
+                document_id = EXCLUDED.document_id,
+                channel = EXCLUDED.channel,
+                user_name = EXCLUDED.user_name,
+                message_date = EXCLUDED.message_date,
+                message_time = EXCLUDED.message_time,
+                access_scopes = EXCLUDED.access_scopes,
+                chunk_text = EXCLUDED.chunk_text,
+                embedding = EXCLUDED.embedding,
+                metadata = EXCLUDED.metadata;
+        """
+        params_seq = [
+            (
+                chunk.chunk_id,
+                chunk.document_id,
+                chunk.channel,
+                chunk.user_name,
+                chunk.message_date,
+                chunk.message_time,
+                chunk.access_scopes,
+                chunk.chunk_text,
+                embedding,
+                Jsonb(chunk.metadata),
+            )
+            for chunk, embedding in zip(chunks, embeddings, strict=True)
+        ]
+        pool = self._ensure_pool()
+        with pool.connection() as connection:
+            with connection.cursor() as cursor:
+                cursor.executemany(sql, params_seq)
 
     async def upsert_chunks(self, chunks: list[ChunkRecord], embeddings: list[list[float]]) -> None:
         await asyncio.to_thread(self._upsert_chunks_sync, chunks, embeddings)
@@ -301,7 +323,8 @@ class PostgresVectorStore:
             LIMIT %s;
         """
         query_params = [query_vector, *params, query_vector, top_k]
-        with self._connect() as connection:
+        pool = self._ensure_pool()
+        with pool.connection() as connection:
             rows = connection.execute(sql, query_params).fetchall()
         return [self._row_to_chunk(row) for row in rows]
 
@@ -318,7 +341,8 @@ class PostgresVectorStore:
         if not ids:
             return []
         table = self.settings.pgvector_table
-        with self._connect() as connection:
+        pool = self._ensure_pool()
+        with pool.connection() as connection:
             rows = connection.execute(
                 f"""
                 SELECT
@@ -343,8 +367,11 @@ class PostgresVectorStore:
         return await asyncio.to_thread(self._get_chunks_by_ids_sync, chunk_ids)
 
     def _list_distinct_sync(self, field_name: str, limit: int) -> list[str]:
+        if field_name not in _ALLOWED_DISTINCT_FIELDS:
+            raise ValueError(f"Invalid field_name: {field_name!r}")
         table = self.settings.pgvector_table
-        with self._connect() as connection:
+        pool = self._ensure_pool()
+        with pool.connection() as connection:
             rows = connection.execute(
                 f"""
                 SELECT DISTINCT {field_name}
@@ -362,3 +389,11 @@ class PostgresVectorStore:
 
     async def list_users(self, limit: int = 200) -> list[str]:
         return await asyncio.to_thread(self._list_distinct_sync, "user_name", limit)
+
+    def close(self) -> None:
+        if self._pool is not None:
+            self._pool.close()
+            self._pool = None
+
+    async def aclose(self) -> None:
+        await asyncio.to_thread(self.close)

@@ -11,7 +11,7 @@ from app.schemas import ChunkRecord, ParsedMessage
 class ChunkingService:
     LOG_PATTERN = re.compile(
         r"^\[(?P<date>\d{4}-\d{2}-\d{2}), (?P<time>\d{2}:\d{2}:\d{2}), "
-        r"(?P<channel>.*?), (?P<content>.*), (?P<user>.*?)\]$"
+        r"(?P<channel>[^,]+), (?P<content>.+), (?P<user>[^\],]+)\]$"
     )
 
     def __init__(self, settings: Settings) -> None:
@@ -86,13 +86,16 @@ class ChunkingService:
         if buffer:
             chunk_groups.append(buffer)
 
+        max_tokens = self.settings.chunk_max_tokens
+        sub_groups = self._split_oversized_groups(chunk_groups, max_tokens)
+
         chunks: list[ChunkRecord] = []
-        for seq, group in enumerate(chunk_groups):
+        for seq, group in enumerate(sub_groups):
             first = group[0]
             chunk_text = "\n".join(
                 f"{message.channel} {message.user_name}: {message.content}" for message in group
             )
-            token_count = max(len(chunk_text.split()), max(1, len(chunk_text) // 4))
+            token_count = self._estimate_tokens(chunk_text)
             chunks.append(
                 ChunkRecord(
                     chunk_id=f"{document_id}_chunk_{seq:04d}",
@@ -115,6 +118,37 @@ class ChunkingService:
             )
         return chunks
 
+    @staticmethod
+    def _estimate_tokens(text: str) -> int:
+        words = text.split()
+        latin_tokens = sum(1 for w in words if w.isascii())
+        korean_chars = sum(1 for ch in text if '\uac00' <= ch <= '\ud7a3')
+        return latin_tokens + max(1, korean_chars // 2) if (latin_tokens + korean_chars) else max(1, len(text) // 4)
+
+    @staticmethod
+    def _split_oversized_groups(
+        groups: list[list[ParsedMessage]], max_tokens: int,
+    ) -> list[list[ParsedMessage]]:
+        result: list[list[ParsedMessage]] = []
+        for group in groups:
+            if len(group) <= 1:
+                result.append(group)
+                continue
+            current: list[ParsedMessage] = []
+            current_tokens = 0
+            for message in group:
+                line = f"{message.channel} {message.user_name}: {message.content}"
+                line_tokens = ChunkingService._estimate_tokens(line)
+                if current and current_tokens + line_tokens > max_tokens:
+                    result.append(current)
+                    current = []
+                    current_tokens = 0
+                current.append(message)
+                current_tokens += line_tokens
+            if current:
+                result.append(current)
+        return result
+
     def _should_merge(self, previous: ParsedMessage, current: ParsedMessage) -> bool:
         if previous.channel != current.channel or previous.user_name != current.user_name:
             return False
@@ -122,6 +156,7 @@ class ChunkingService:
         current_dt = datetime.combine(current.date, current.time)
         if current_dt - previous_dt > timedelta(seconds=self.settings.chunk_merge_time_gap_seconds):
             return False
-        short_turn = len(current.content) <= 80 or len(previous.content) <= 80
-        return short_turn or len(previous.sentences) <= 2
+        current_is_short = len(current.content) <= 80
+        previous_is_short = len(previous.content) <= 80
+        return (current_is_short and previous_is_short) or (current_is_short and len(previous.sentences) <= 2)
 

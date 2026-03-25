@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     embedding_model: str = "BAAI/bge-m3"
     embedding_dimensions: int = 1024
     embedding_batch_size: int = 16
+    embedding_device: str = "cpu"
 
     codex_proxy_base_url: str = "http://127.0.0.1:8800"
     codex_model: str = "gpt-5.3-codex"

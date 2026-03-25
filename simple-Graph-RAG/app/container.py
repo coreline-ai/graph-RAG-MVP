@@ -83,14 +83,25 @@ class ServiceContainer:
 
     async def startup(self) -> None:
         self.startup_errors.clear()
+        critical_failures: list[str] = []
         for name, component in (("postgres", self.postgres), ("neo4j", self.neo4j)):
             try:
                 await component.bootstrap()
             except Exception as exc:  # pragma: no cover - depends on runtime infra
                 self.startup_errors[name] = str(exc)
+                critical_failures.append(name)
+        if critical_failures:
+            raise RuntimeError(
+                f"Critical service bootstrap failed: {', '.join(critical_failures)}. "
+                f"Details: {self.startup_errors}"
+            )
 
     async def shutdown(self) -> None:
-        for method_name, component in (("aclose", self.codex_proxy), ("close", self.neo4j)):
+        for method_name, component in (
+            ("aclose", self.postgres),
+            ("aclose", self.codex_proxy),
+            ("close", self.neo4j),
+        ):
             try:
                 await getattr(component, method_name)()
             except Exception:  # pragma: no cover - defensive cleanup only

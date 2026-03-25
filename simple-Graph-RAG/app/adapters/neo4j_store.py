@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import asyncio
 from itertools import islice
 from typing import Any
 
-from neo4j import GraphDatabase
+from neo4j import AsyncGraphDatabase
 
 from app.config import Settings
 from app.schemas import ChunkRecord, DocumentMetadata, GraphExpansion
@@ -13,23 +12,25 @@ from app.schemas import ChunkRecord, DocumentMetadata, GraphExpansion
 class Neo4jStore:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
-        self._driver = GraphDatabase.driver(
+        self._driver = AsyncGraphDatabase.driver(
             settings.neo4j_uri,
             auth=(settings.neo4j_username, settings.neo4j_password),
         )
 
-    def _run_query(self, query: str, **params: Any) -> list[dict[str, Any]]:
-        with self._driver.session(database=self.settings.neo4j_database) as session:
-            return [record.data() for record in session.run(query, **params)]
+    async def _run_query(self, query: str, **params: Any) -> list[dict[str, Any]]:
+        async with self._driver.session(database=self.settings.neo4j_database) as session:
+            result = await session.run(query, **params)
+            return [record.data() async for record in result]
 
-    def _batched(self, rows: list[dict[str, Any]], size: int = 10) -> list[list[dict[str, Any]]]:
+    @staticmethod
+    def _batched(rows: list[dict[str, Any]], size: int = 10) -> list[list[dict[str, Any]]]:
         iterator = iter(rows)
         batches: list[list[dict[str, Any]]] = []
         while batch := list(islice(iterator, size)):
             batches.append(batch)
         return batches
 
-    def _bootstrap_sync(self) -> None:
+    async def bootstrap(self) -> None:
         statements = [
             "CREATE CONSTRAINT document_id_unique IF NOT EXISTS FOR (d:Document) REQUIRE d.document_id IS UNIQUE",
             "CREATE CONSTRAINT chunk_id_unique IF NOT EXISTS FOR (c:Chunk) REQUIRE c.chunk_id IS UNIQUE",
@@ -38,23 +39,17 @@ class Neo4jStore:
             "CREATE CONSTRAINT date_value_unique IF NOT EXISTS FOR (d:Date) REQUIRE d.date IS UNIQUE",
         ]
         for statement in statements:
-            self._run_query(statement)
+            await self._run_query(statement)
 
-    async def bootstrap(self) -> None:
-        await asyncio.to_thread(self._bootstrap_sync)
-
-    def _healthcheck_sync(self) -> str:
+    async def healthcheck(self) -> str:
         try:
-            self._run_query("RETURN 1 AS ok")
+            await self._run_query("RETURN 1 AS ok")
         except Exception as exc:  # pragma: no cover - depends on runtime infra
             return f"error:{exc}"
         return "ok"
 
-    async def healthcheck(self) -> str:
-        return await asyncio.to_thread(self._healthcheck_sync)
-
-    def _upsert_graph_sync(self, document: DocumentMetadata, graph_rows: list[dict[str, Any]]) -> None:
-        self._run_query(
+    async def upsert_graph(self, document: DocumentMetadata, graph_rows: list[dict[str, Any]]) -> None:
+        await self._run_query(
             """
             MERGE (d:Document {document_id: $document_id})
             SET d.filename = $filename,
@@ -74,7 +69,7 @@ class Neo4jStore:
         )
 
         for batch in self._batched(graph_rows, size=10):
-            self._run_query(
+            await self._run_query(
                 """
                 UNWIND $rows AS row
                 MERGE (c:Chunk {chunk_id: row.chunk_id})
@@ -111,7 +106,7 @@ class Neo4jStore:
         ]
         if next_edges:
             for batch in self._batched(next_edges, size=20):
-                self._run_query(
+                await self._run_query(
                     """
                     UNWIND $edges AS edge
                     MATCH (a:Chunk {chunk_id: edge.from_chunk_id})
@@ -121,48 +116,50 @@ class Neo4jStore:
                     edges=batch,
                 )
 
-    async def upsert_graph(self, document: DocumentMetadata, graph_rows: list[dict[str, Any]]) -> None:
-        await asyncio.to_thread(self._upsert_graph_sync, document, graph_rows)
-
-    def _delete_document_sync(self, document_id: str) -> bool:
-        self._run_query(
+    async def delete_document(self, document_id: str) -> bool:
+        await self._run_query(
             """
             MATCH (d:Document {document_id: $document_id})<-[:PART_OF]-(c:Chunk)
+            WITH d, c, c-[r]-() AS rels
+            WITH d, c, collect(DISTINCT startNode(r)) + collect(DISTINCT endNode(r)) AS neighbors
             DETACH DELETE c
-            WITH d
+            WITH d, neighbors
+            UNWIND neighbors AS n
+            WITH d, n
+            WHERE (n:User OR n:Channel OR n:Date OR n:Entity OR n:Topic)
+              AND n <> d
+              AND NOT (n)--()
+            DELETE n
+            """,
+            document_id=document_id,
+        )
+        await self._run_query(
+            """
+            MATCH (d:Document {document_id: $document_id})
             DETACH DELETE d
             """,
             document_id=document_id,
         )
-        self._run_query(
-            """
-            MATCH (n)
-            WHERE (n:User OR n:Channel OR n:Date OR n:Entity OR n:Topic)
-              AND NOT (n)--()
-            DELETE n
-            """
-        )
         return True
 
-    async def delete_document(self, document_id: str) -> bool:
-        return await asyncio.to_thread(self._delete_document_sync, document_id)
-
-    def _expand_from_seed_chunks_sync(
+    async def expand_from_seed_chunks(
         self,
         chunk_ids: list[str],
+        *,
         next_window: int,
     ) -> dict[str, GraphExpansion]:
         if not chunk_ids:
             return {}
-        rows = self._run_query(
-            """
+        safe_window = max(1, int(next_window))
+        rows = await self._run_query(
+            f"""
             MATCH (seed:Chunk)
             WHERE seed.chunk_id IN $chunk_ids
             OPTIONAL MATCH (seed)-[:SENT_BY]->(u:User)
             OPTIONAL MATCH (seed)-[:IN_CHANNEL]->(ch:Channel)
             OPTIONAL MATCH (seed)-[:MENTIONS]->(e:Entity)
             OPTIONAL MATCH (seed)-[:ON_DATE]->(dt:Date)
-            OPTIONAL MATCH (seed)-[:NEXT*1..$next_window]->(near:Chunk)
+            OPTIONAL MATCH (seed)-[:NEXT*1..{safe_window}]->(near:Chunk)
             RETURN
                 seed.chunk_id AS chunk_id,
                 collect(DISTINCT u.name) AS users,
@@ -172,7 +169,6 @@ class Neo4jStore:
                 collect(DISTINCT near.chunk_id) AS expanded_chunk_ids
             """,
             chunk_ids=chunk_ids,
-            next_window=next_window,
         )
         expansions: dict[str, GraphExpansion] = {}
         for row in rows:
@@ -190,13 +186,5 @@ class Neo4jStore:
             )
         return expansions
 
-    async def expand_from_seed_chunks(
-        self,
-        chunk_ids: list[str],
-        *,
-        next_window: int,
-    ) -> dict[str, GraphExpansion]:
-        return await asyncio.to_thread(self._expand_from_seed_chunks_sync, chunk_ids, next_window)
-
     async def close(self) -> None:
-        await asyncio.to_thread(self._driver.close)
+        await self._driver.close()

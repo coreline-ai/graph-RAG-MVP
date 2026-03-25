@@ -3,7 +3,7 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -41,9 +41,13 @@ def create_app(
     if static_dir.exists():
         app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
+    index_path = static_dir / "index.html"
+
     @app.get("/", include_in_schema=False)
-    async def root() -> FileResponse:
-        return FileResponse(static_dir / "index.html")
+    async def root():
+        if not index_path.exists():
+            raise HTTPException(status_code=404, detail="index.html not found")
+        return FileResponse(index_path)
 
     app.include_router(health_router)
     app.include_router(documents_router)

@@ -1,170 +1,1411 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ko">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Simple-Graph-RAG</title>
+    <title>Graph RAG 검색</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <style>
+      /* ============================================
+         DESIGN SYSTEM — TOKENS
+         ============================================ */
       :root {
-        color-scheme: light;
-        font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
-        background: #f4f6fb;
-        color: #1f2937;
+        --bg-primary: #FAFBFD;
+        --bg-secondary: #F1F3F8;
+        --bg-surface: #FFFFFF;
+        --text-primary: #1A1D24;
+        --text-secondary: #5A6170;
+        --text-tertiary: #8B92A0;
+        --accent: #2563EB;
+        --accent-hover: #1D4ED8;
+        --accent-soft: #EFF4FF;
+        --accent-green: #16A34A;
+        --accent-amber: #D97706;
+        --accent-red: #DC2626;
+        --border: #E2E5EB;
+        --border-focus: #2563EB;
+        --source-bg: #F7F8FA;
+        --chip-bg: #E8ECF4;
+        --chip-text: #3B4255;
+        --score-bar: #2563EB;
+        --backdrop: rgba(15, 23, 42, 0.3);
+
+        --font-family: "Noto Sans KR", -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+        --font-xs: 0.75rem;
+        --font-sm: 0.8125rem;
+        --font-base: 0.9375rem;
+        --font-lg: 1.125rem;
+        --font-xl: 1.5rem;
+        --lh-tight: 1.4;
+        --lh-relaxed: 1.7;
+
+        --space-1: 4px; --space-2: 8px; --space-3: 12px;
+        --space-4: 16px; --space-5: 20px; --space-6: 24px;
+        --space-7: 28px; --space-8: 32px;
+
+        --radius-sm: 8px;
+        --radius-md: 12px;
+        --radius-lg: 16px;
+        --radius-xl: 20px;
+        --radius-full: 9999px;
+
+        --shadow-sm: 0 1px 3px rgba(0,0,0,0.06);
+        --shadow-md: 0 4px 16px rgba(0,0,0,0.08);
+        --shadow-lg: 0 8px 32px rgba(0,0,0,0.1);
+        --transition-fast: 150ms ease;
+        --transition-base: 250ms ease;
       }
 
-      * {
-        box-sizing: border-box;
+      [data-theme="dark"] {
+        --bg-primary: #0F1117;
+        --bg-secondary: #161922;
+        --bg-surface: #1E2130;
+        --text-primary: #E8EAF0;
+        --text-secondary: #9BA1B0;
+        --text-tertiary: #6B7280;
+        --accent: #5B8DEF;
+        --accent-hover: #4A7DE0;
+        --accent-soft: #1E2A45;
+        --border: #2A2E3D;
+        --border-focus: #5B8DEF;
+        --source-bg: #1A1D28;
+        --chip-bg: #2A2E3D;
+        --chip-text: #B0B8CC;
+        --score-bar: #5B8DEF;
+        --backdrop: rgba(0, 0, 0, 0.5);
       }
+
+      /* ============================================
+         RESET & BASE
+         ============================================ */
+      *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
       body {
-        margin: 0;
-        min-height: 100vh;
-        background:
-          radial-gradient(circle at top right, rgba(14, 165, 233, 0.16), transparent 30%),
-          linear-gradient(180deg, #f8fbff 0%, #eef2ff 100%);
+        font-family: var(--font-family);
+        font-size: var(--font-base);
+        line-height: var(--lh-tight);
+        color: var(--text-primary);
+        background: var(--bg-primary);
+        min-height: 100dvh;
+        overflow: hidden;
       }
 
-      main {
-        max-width: 1080px;
-        margin: 0 auto;
-        padding: 40px 20px 80px;
+      button { font: inherit; cursor: pointer; border: none; background: none; color: inherit; }
+      input { font: inherit; color: inherit; }
+
+      /* ============================================
+         LAYOUT
+         ============================================ */
+      .topbar {
+        height: 52px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 var(--space-5);
+        border-bottom: 1px solid var(--border);
+        background: var(--bg-surface);
+        position: relative;
+        z-index: 20;
       }
 
-      h1 {
-        margin: 0 0 8px;
-        font-size: 2.4rem;
+      .topbar-left { display: flex; align-items: center; gap: var(--space-3); }
+
+      .topbar-title {
+        font-size: var(--font-lg);
+        font-weight: 700;
+        letter-spacing: -0.02em;
       }
 
-      p {
-        margin: 0;
-        color: #4b5563;
-      }
+      .topbar-right { display: flex; align-items: center; gap: var(--space-3); }
 
-      .grid {
+      .layout {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-        gap: 20px;
-        margin-top: 28px;
+        grid-template-columns: 280px 1fr;
+        height: calc(100dvh - 52px);
+        overflow: hidden;
       }
 
-      .card {
-        background: rgba(255, 255, 255, 0.92);
-        border: 1px solid rgba(148, 163, 184, 0.25);
-        border-radius: 20px;
-        padding: 20px;
-        box-shadow: 0 20px 45px rgba(15, 23, 42, 0.08);
-        backdrop-filter: blur(12px);
+      /* ============================================
+         SIDEBAR
+         ============================================ */
+      .sidebar {
+        background: var(--bg-surface);
+        border-right: 1px solid var(--border);
+        padding: var(--space-5);
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-5);
+        transition: transform var(--transition-base);
       }
 
-      textarea,
-      input {
-        width: 100%;
-        padding: 12px 14px;
-        margin-top: 10px;
-        border: 1px solid #cbd5e1;
-        border-radius: 12px;
-        font: inherit;
-        background: #fff;
+      .sidebar-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
       }
 
-      textarea {
-        min-height: 180px;
-        resize: vertical;
-      }
-
-      button {
-        margin-top: 14px;
-        padding: 12px 16px;
-        border: 0;
-        border-radius: 999px;
-        background: linear-gradient(135deg, #0f766e, #0284c7);
-        color: #fff;
-        font: inherit;
+      .sidebar-title {
+        font-size: var(--font-base);
         font-weight: 600;
+      }
+
+      .sidebar-close {
+        display: none;
+        width: 32px; height: 32px;
+        align-items: center; justify-content: center;
+        border-radius: var(--radius-sm);
+      }
+      .sidebar-close:hover { background: var(--bg-secondary); }
+
+      .filter-section { display: flex; flex-direction: column; gap: var(--space-2); }
+
+      .filter-label {
+        font-size: var(--font-sm);
+        font-weight: 600;
+        color: var(--text-secondary);
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+
+      .channel-list {
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-1);
+        max-height: 160px;
+        overflow-y: auto;
+      }
+
+      .channel-item {
+        display: flex;
+        align-items: center;
+        gap: var(--space-2);
+        padding: var(--space-1) var(--space-2);
+        border-radius: var(--radius-sm);
+        font-size: var(--font-sm);
+        cursor: pointer;
+        transition: background var(--transition-fast);
+      }
+      .channel-item:hover { background: var(--bg-secondary); }
+
+      .channel-item input[type="checkbox"] {
+        accent-color: var(--accent);
+        width: 16px; height: 16px;
         cursor: pointer;
       }
 
-      pre {
-        margin: 14px 0 0;
-        padding: 14px;
-        background: #0f172a;
-        color: #e2e8f0;
-        border-radius: 14px;
-        overflow: auto;
+      .filter-input {
+        width: 100%;
+        padding: var(--space-2) var(--space-3);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        background: var(--bg-primary);
+        font-size: var(--font-sm);
+        transition: border-color var(--transition-fast);
+      }
+      .filter-input:focus {
+        outline: none;
+        border-color: var(--border-focus);
+        box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+      }
+
+      .filter-actions {
+        display: flex;
+        gap: var(--space-2);
+        padding-top: var(--space-2);
+      }
+
+      .btn-apply {
+        flex: 1;
+        padding: var(--space-2) var(--space-3);
+        background: var(--accent);
+        color: #fff;
+        border-radius: var(--radius-sm);
+        font-size: var(--font-sm);
+        font-weight: 600;
+        transition: background var(--transition-fast);
+      }
+      .btn-apply:hover { background: var(--accent-hover); }
+
+      .btn-reset {
+        flex: 1;
+        padding: var(--space-2) var(--space-3);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        font-size: var(--font-sm);
+        font-weight: 500;
+        color: var(--text-secondary);
+        transition: all var(--transition-fast);
+      }
+      .btn-reset:hover { background: var(--bg-secondary); }
+
+      .active-filters {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--space-1);
+      }
+
+      .active-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 2px var(--space-2);
+        background: var(--accent-soft);
+        color: var(--accent);
+        font-size: var(--font-xs);
+        font-weight: 500;
+        border-radius: var(--radius-full);
+      }
+
+      .active-chip button {
+        font-size: 14px;
+        line-height: 1;
+        opacity: 0.6;
+        color: var(--accent);
+      }
+      .active-chip button:hover { opacity: 1; }
+
+      /* ============================================
+         CHAT AREA
+         ============================================ */
+      .chat-area {
+        display: flex;
+        flex-direction: column;
+        background: var(--bg-secondary);
+        overflow: hidden;
+      }
+
+      .messages {
+        flex: 1;
+        overflow-y: auto;
+        padding: var(--space-6) var(--space-5);
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-5);
+        scroll-behavior: smooth;
+      }
+
+      .messages::-webkit-scrollbar { width: 6px; }
+      .messages::-webkit-scrollbar-track { background: transparent; }
+      .messages::-webkit-scrollbar-thumb {
+        background: var(--border);
+        border-radius: 3px;
+      }
+
+      /* ============================================
+         WELCOME CARD
+         ============================================ */
+      .welcome-card {
+        background: var(--bg-surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-xl);
+        padding: var(--space-7);
+        max-width: 560px;
+        box-shadow: var(--shadow-sm);
+      }
+
+      .welcome-icon {
+        width: 48px; height: 48px;
+        background: var(--accent-soft);
+        border-radius: var(--radius-md);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 24px;
+        margin-bottom: var(--space-4);
+      }
+
+      .welcome-title {
+        font-size: var(--font-lg);
+        font-weight: 700;
+        margin-bottom: var(--space-2);
+      }
+
+      .welcome-desc {
+        font-size: var(--font-sm);
+        color: var(--text-secondary);
+        line-height: var(--lh-relaxed);
+        margin-bottom: var(--space-5);
+      }
+
+      .welcome-examples {
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-2);
+      }
+
+      .example-btn {
+        text-align: left;
+        padding: var(--space-3) var(--space-4);
+        background: var(--bg-primary);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        font-size: var(--font-sm);
+        color: var(--text-primary);
+        transition: all var(--transition-fast);
+        line-height: var(--lh-relaxed);
+      }
+      .example-btn:hover {
+        border-color: var(--accent);
+        background: var(--accent-soft);
+      }
+      .example-btn:focus-visible {
+        outline: 2px solid var(--border-focus);
+        outline-offset: 2px;
+      }
+
+      /* ============================================
+         MESSAGE BUBBLES
+         ============================================ */
+      .message { display: flex; flex-direction: column; }
+
+      .message-user {
+        align-items: flex-end;
+      }
+
+      .message-user .bubble {
+        background: var(--accent);
+        color: #fff;
+        border-radius: var(--radius-lg) var(--radius-lg) var(--radius-sm) var(--radius-lg);
+        padding: var(--space-3) var(--space-4);
+        max-width: 75%;
+        line-height: var(--lh-relaxed);
+        word-break: break-word;
+      }
+
+      .message-user .filter-badges {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        margin-top: var(--space-1);
+        justify-content: flex-end;
+      }
+
+      .filter-badge {
+        font-size: var(--font-xs);
+        padding: 2px var(--space-2);
+        background: rgba(255,255,255,0.2);
+        color: #fff;
+        border-radius: var(--radius-full);
+      }
+
+      .message-assistant { align-items: flex-start; }
+
+      .message-assistant .bubble {
+        background: var(--bg-surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm) var(--radius-lg) var(--radius-lg) var(--radius-lg);
+        padding: var(--space-4) var(--space-5);
+        max-width: 85%;
+        box-shadow: var(--shadow-sm);
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-3);
+      }
+
+      .answer-text {
+        line-height: var(--lh-relaxed);
         white-space: pre-wrap;
         word-break: break-word;
       }
-    </style>
-  </head>
-  <body>
-    <main>
-      <h1>Simple-Graph-RAG</h1>
-      <p>Manual smoke-test surface for document ingest, query, and health.</p>
 
-      <section class="grid">
-        <article class="card">
-          <h2>Health</h2>
-          <button id="healthButton" type="button">Fetch /health</button>
-          <pre id="healthOutput">No request yet.</pre>
-        </article>
-
-        <article class="card">
-          <h2>Ingest</h2>
-          <input id="filename" type="text" value="chat_logs_100.txt" />
-          <textarea id="content" placeholder="Paste chat logs here"></textarea>
-          <button id="ingestButton" type="button">POST /documents</button>
-          <pre id="ingestOutput">No request yet.</pre>
-        </article>
-
-        <article class="card">
-          <h2>Query</h2>
-          <input id="question" type="text" value="2024-01-15 general 채널에서 어떤 논의가 있었나?" />
-          <input id="scopes" type="text" value="public" />
-          <button id="queryButton" type="button">POST /query</button>
-          <pre id="queryOutput">No request yet.</pre>
-        </article>
-      </section>
-    </main>
-
-    <script>
-      async function requestJson(url, options) {
-        const response = await fetch(url, options);
-        const body = await response.json();
-        return JSON.stringify({ status: response.status, body }, null, 2);
+      .fallback-notice {
+        display: flex;
+        align-items: center;
+        gap: var(--space-2);
+        padding: var(--space-2) var(--space-3);
+        background: var(--accent-soft);
+        border-radius: var(--radius-sm);
+        font-size: var(--font-sm);
+        color: var(--accent);
       }
 
-      document.getElementById("healthButton").addEventListener("click", async () => {
-        document.getElementById("healthOutput").textContent = await requestJson("/health");
-      });
+      .strategy-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 2px var(--space-2);
+        background: var(--chip-bg);
+        color: var(--chip-text);
+        font-size: var(--font-xs);
+        font-weight: 500;
+        border-radius: var(--radius-full);
+      }
 
-      document.getElementById("ingestButton").addEventListener("click", async () => {
-        const payload = {
-          filename: document.getElementById("filename").value,
-          content: document.getElementById("content").value,
-          default_access_scopes: ["public"],
-          source: "manual-ui"
-        };
-        document.getElementById("ingestOutput").textContent = await requestJson("/documents", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload)
-        });
-      });
+      .message-time {
+        font-size: var(--font-xs);
+        color: var(--text-tertiary);
+        margin-top: var(--space-1);
+        padding: 0 var(--space-2);
+      }
 
-      document.getElementById("queryButton").addEventListener("click", async () => {
-        const payload = {
-          question: document.getElementById("question").value,
-          top_k: 5
-        };
-        document.getElementById("queryOutput").textContent = await requestJson("/query", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "X-Access-Scopes": document.getElementById("scopes").value
-          },
-          body: JSON.stringify(payload)
+      /* ============================================
+         SOURCES
+         ============================================ */
+      .sources-toggle {
+        display: flex;
+        align-items: center;
+        gap: var(--space-2);
+        padding: var(--space-2) 0;
+        font-size: var(--font-sm);
+        font-weight: 500;
+        color: var(--text-secondary);
+        transition: color var(--transition-fast);
+      }
+      .sources-toggle:hover { color: var(--text-primary); }
+      .sources-toggle:focus-visible {
+        outline: 2px solid var(--border-focus);
+        outline-offset: 2px;
+        border-radius: var(--radius-sm);
+      }
+
+      .sources-toggle-arrow {
+        transition: transform var(--transition-fast);
+        font-size: 12px;
+      }
+      .sources-toggle[aria-expanded="true"] .sources-toggle-arrow {
+        transform: rotate(180deg);
+      }
+
+      .sources-list {
+        display: none;
+        flex-direction: column;
+        gap: var(--space-2);
+        max-height: 400px;
+        overflow-y: auto;
+        padding-right: var(--space-1);
+      }
+      .sources-list.open { display: flex; }
+
+      .source-card {
+        background: var(--source-bg);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        padding: var(--space-3);
+        font-size: var(--font-sm);
+      }
+
+      .source-header {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: var(--space-2);
+        margin-bottom: var(--space-2);
+      }
+
+      .source-channel {
+        padding: 2px var(--space-2);
+        background: var(--accent-soft);
+        color: var(--accent);
+        border-radius: var(--radius-full);
+        font-size: var(--font-xs);
+        font-weight: 600;
+      }
+
+      .source-meta {
+        font-size: var(--font-xs);
+        color: var(--text-tertiary);
+      }
+
+      .source-score {
+        margin-left: auto;
+        display: flex;
+        align-items: center;
+        gap: var(--space-1);
+        font-size: var(--font-xs);
+        color: var(--text-tertiary);
+      }
+
+      .score-bar-track {
+        width: 48px; height: 4px;
+        background: var(--border);
+        border-radius: 2px;
+        overflow: hidden;
+      }
+
+      .score-bar-fill {
+        height: 100%;
+        background: var(--score-bar);
+        border-radius: 2px;
+        transition: width var(--transition-base);
+      }
+
+      .source-content {
+        color: var(--text-primary);
+        line-height: var(--lh-relaxed);
+        word-break: break-word;
+        margin-bottom: var(--space-2);
+      }
+
+      .graph-neighbors {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        align-items: center;
+      }
+
+      .graph-label {
+        font-size: var(--font-xs);
+        color: var(--text-tertiary);
+        font-weight: 500;
+        margin-right: 2px;
+      }
+
+      .graph-chip {
+        padding: 1px 6px;
+        background: var(--chip-bg);
+        color: var(--chip-text);
+        font-size: 11px;
+        border-radius: var(--radius-full);
+      }
+
+      /* ============================================
+         LOADING DOTS
+         ============================================ */
+      .loading-dots {
+        display: flex;
+        gap: 4px;
+        padding: 6px 0;
+      }
+
+      .loading-dots span {
+        width: 8px; height: 8px;
+        background: var(--text-tertiary);
+        border-radius: 50%;
+        animation: dot-bounce 1.4s ease-in-out infinite;
+      }
+      .loading-dots span:nth-child(2) { animation-delay: 0.16s; }
+      .loading-dots span:nth-child(3) { animation-delay: 0.32s; }
+
+      @keyframes dot-bounce {
+        0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); }
+        40% { opacity: 1; transform: scale(1); }
+      }
+
+      /* ============================================
+         INPUT BAR
+         ============================================ */
+      .input-bar {
+        display: flex;
+        align-items: center;
+        gap: var(--space-2);
+        padding: var(--space-3) var(--space-5);
+        background: var(--bg-surface);
+        border-top: 1px solid var(--border);
+      }
+
+      .filter-toggle {
+        width: 40px; height: 40px;
+        display: none; /* shown on mobile */
+        align-items: center;
+        justify-content: center;
+        border-radius: var(--radius-sm);
+        position: relative;
+        color: var(--text-secondary);
+        flex-shrink: 0;
+        transition: all var(--transition-fast);
+      }
+      .filter-toggle:hover { background: var(--bg-secondary); color: var(--text-primary); }
+      .filter-toggle:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 2px; }
+
+      .filter-toggle-badge {
+        position: absolute;
+        top: 4px; right: 4px;
+        width: 16px; height: 16px;
+        background: var(--accent);
+        color: #fff;
+        font-size: 10px;
+        font-weight: 700;
+        border-radius: 50%;
+        display: none;
+        align-items: center;
+        justify-content: center;
+      }
+      .filter-toggle-badge.show { display: flex; }
+
+      .input-wrapper {
+        flex: 1;
+        position: relative;
+      }
+
+      .input-field {
+        width: 100%;
+        padding: var(--space-3) var(--space-4);
+        padding-right: 48px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-full);
+        background: var(--bg-primary);
+        font-size: var(--font-base);
+        transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+      }
+      .input-field:focus {
+        outline: none;
+        border-color: var(--border-focus);
+        box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+      }
+      .input-field::placeholder { color: var(--text-tertiary); }
+
+      .send-btn {
+        position: absolute;
+        right: 4px;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 36px; height: 36px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--accent);
+        color: #fff;
+        border-radius: 50%;
+        transition: all var(--transition-fast);
+      }
+      .send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+      .send-btn:not(:disabled):hover { background: var(--accent-hover); transform: translateY(-50%) scale(1.05); }
+      .send-btn:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 2px; }
+
+      /* ============================================
+         HEALTH INDICATOR
+         ============================================ */
+      .health-btn {
+        display: flex;
+        align-items: center;
+        gap: var(--space-2);
+        padding: var(--space-1) var(--space-2);
+        border-radius: var(--radius-full);
+        font-size: var(--font-xs);
+        color: var(--text-secondary);
+        transition: background var(--transition-fast);
+        position: relative;
+      }
+      .health-btn:hover { background: var(--bg-secondary); }
+
+      .health-dot {
+        width: 8px; height: 8px;
+        border-radius: 50%;
+        background: var(--text-tertiary);
+        transition: background var(--transition-fast);
+      }
+      .health-dot.ok { background: var(--accent-green); }
+      .health-dot.degraded { background: var(--accent-amber); }
+      .health-dot.error { background: var(--accent-red); }
+
+      .health-dropdown {
+        display: none;
+        position: absolute;
+        top: calc(100% + 8px);
+        right: 0;
+        background: var(--bg-surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        padding: var(--space-3);
+        box-shadow: var(--shadow-lg);
+        z-index: 30;
+        min-width: 220px;
+      }
+      .health-dropdown.open { display: block; }
+
+      .health-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: var(--space-1) 0;
+        font-size: var(--font-sm);
+      }
+
+      .health-row-label { color: var(--text-secondary); }
+      .health-row-value { font-weight: 500; }
+      .health-row-value.ok { color: var(--accent-green); }
+      .health-row-value.error { color: var(--accent-red); }
+
+      /* ============================================
+         THEME TOGGLE
+         ============================================ */
+      .theme-toggle {
+        width: 36px; height: 36px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: var(--radius-sm);
+        color: var(--text-secondary);
+        transition: all var(--transition-fast);
+      }
+      .theme-toggle:hover { background: var(--bg-secondary); color: var(--text-primary); }
+      .theme-toggle:focus-visible { outline: 2px solid var(--border-focus); outline-offset: 2px; }
+
+      .theme-toggle .icon-sun, .theme-toggle .icon-moon { width: 18px; height: 18px; }
+      [data-theme="light"] .theme-toggle .icon-moon { display: none; }
+      [data-theme="dark"] .theme-toggle .icon-sun { display: none; }
+
+      /* ============================================
+         MOBILE SIDEBAR OVERLAY
+         ============================================ */
+      .sidebar-backdrop {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: var(--backdrop);
+        z-index: 40;
+      }
+      .sidebar-backdrop.open { display: block; }
+
+      /* ============================================
+         ERROR STATE
+         ============================================ */
+      .error-bubble {
+        padding: var(--space-3) var(--space-4);
+        background: #FEF2F2;
+        border: 1px solid #FECACA;
+        border-radius: var(--radius-md);
+        color: var(--accent-red);
+        font-size: var(--font-sm);
+      }
+      [data-theme="dark"] .error-bubble {
+        background: #2D1B1B;
+        border-color: #5C2020;
+      }
+
+      /* ============================================
+         RESPONSIVE
+         ============================================ */
+      @media (max-width: 768px) {
+        .layout { grid-template-columns: 1fr; }
+
+        .sidebar {
+          position: fixed;
+          left: 0; top: 0; bottom: 0;
+          width: 280px;
+          z-index: 50;
+          transform: translateX(-100%);
+        }
+        .sidebar.open { transform: translateX(0); }
+        .sidebar-close { display: flex; }
+        .filter-toggle { display: flex; }
+
+        .message-user .bubble { max-width: 90%; }
+        .message-assistant .bubble { max-width: 95%; }
+
+        .welcome-card { padding: var(--space-5); }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after {
+          animation-duration: 0.01ms !important;
+          transition-duration: 0.01ms !important;
+        }
+        .messages { scroll-behavior: auto; }
+      }
+    </style>
+  </head>
+
+  <body data-theme="light">
+    <!-- ============================================
+         TOP BAR
+         ============================================ -->
+    <header class="topbar">
+      <div class="topbar-left">
+        <span class="topbar-title">Graph RAG 검색</span>
+      </div>
+      <div class="topbar-right">
+        <button class="health-btn" id="healthBtn" type="button" aria-label="시스템 상태 확인">
+          <span class="health-dot" id="healthDot"></span>
+          <span id="healthLabel">연결 중…</span>
+          <div class="health-dropdown" id="healthDropdown" role="tooltip">
+            <div class="health-row"><span class="health-row-label">PostgreSQL</span><span class="health-row-value" id="hPostgres">-</span></div>
+            <div class="health-row"><span class="health-row-label">Neo4j</span><span class="health-row-value" id="hNeo4j">-</span></div>
+            <div class="health-row"><span class="health-row-label">Embedding</span><span class="health-row-value" id="hEmbedding">-</span></div>
+            <div class="health-row"><span class="health-row-label">LLM Proxy</span><span class="health-row-value" id="hCodex">-</span></div>
+          </div>
+        </button>
+        <button class="theme-toggle" id="themeToggle" type="button" aria-label="테마 전환">
+          <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+          <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- ============================================
+         SIDEBAR BACKDROP (mobile)
+         ============================================ -->
+    <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
+
+    <div class="layout">
+      <!-- ============================================
+           FILTER SIDEBAR
+           ============================================ -->
+      <aside class="sidebar" id="sidebar" aria-label="검색 필터">
+        <div class="sidebar-header">
+          <span class="sidebar-title">검색 필터</span>
+          <button class="sidebar-close" id="sidebarClose" type="button" aria-label="필터 닫기">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+
+        <div class="active-filters" id="activeFilters"></div>
+
+        <div class="filter-section">
+          <span class="filter-label">채널</span>
+          <div class="channel-list" id="channelList"></div>
+        </div>
+
+        <div class="filter-section">
+          <span class="filter-label">작성자</span>
+          <input class="filter-input" id="userFilter" type="text" list="userDatalist" placeholder="이름으로 검색" autocomplete="off" />
+          <datalist id="userDatalist"></datalist>
+        </div>
+
+        <div class="filter-section">
+          <span class="filter-label">기간</span>
+          <input class="filter-input" id="dateFrom" type="date" aria-label="시작일" />
+          <input class="filter-input" id="dateTo" type="date" aria-label="종료일" style="margin-top:4px" />
+        </div>
+
+        <div class="filter-actions">
+          <button class="btn-apply" id="applyFilters" type="button">적용</button>
+          <button class="btn-reset" id="resetFilters" type="button">초기화</button>
+        </div>
+      </aside>
+
+      <!-- ============================================
+           CHAT AREA
+           ============================================ -->
+      <main class="chat-area">
+        <div class="messages" id="messages" role="log" aria-live="polite"></div>
+
+        <form class="input-bar" id="inputBar" aria-label="질문 입력">
+          <button class="filter-toggle" id="filterToggle" type="button" aria-label="필터 열기">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+            <span class="filter-toggle-badge" id="filterBadge"></span>
+          </button>
+          <div class="input-wrapper">
+            <input class="input-field" id="questionInput" type="text" placeholder="채팅 로그에서 무엇이든 물어보세요…" autocomplete="off" />
+            <button class="send-btn" id="sendBtn" type="submit" aria-label="질문 보내기" disabled>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+            </button>
+          </div>
+        </form>
+      </main>
+    </div>
+
+    <!-- ============================================
+         JAVASCRIPT
+         ============================================ -->
+    <script>
+    (function () {
+      'use strict';
+
+      /* ── A: State ── */
+      const state = {
+        filters: { channels: [], userName: '', dateFrom: '', dateTo: '' },
+        health: null,
+        theme: localStorage.getItem('graph-rag-theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'),
+        sidebarOpen: false,
+        isLoading: false,
+        knownChannels: [],
+        knownUsers: [],
+      };
+
+      /* ── B: DOM References ── */
+      const $ = (sel) => document.querySelector(sel);
+      const $$ = (sel) => document.querySelectorAll(sel);
+
+      const dom = {
+        body: document.body,
+        messages: $('#messages'),
+        inputBar: $('#inputBar'),
+        questionInput: $('#questionInput'),
+        sendBtn: $('#sendBtn'),
+        sidebar: $('#sidebar'),
+        sidebarBackdrop: $('#sidebarBackdrop'),
+        sidebarClose: $('#sidebarClose'),
+        filterToggle: $('#filterToggle'),
+        filterBadge: $('#filterBadge'),
+        channelList: $('#channelList'),
+        userFilter: $('#userFilter'),
+        userDatalist: $('#userDatalist'),
+        dateFrom: $('#dateFrom'),
+        dateTo: $('#dateTo'),
+        applyFilters: $('#applyFilters'),
+        resetFilters: $('#resetFilters'),
+        activeFilters: $('#activeFilters'),
+        healthBtn: $('#healthBtn'),
+        healthDot: $('#healthDot'),
+        healthLabel: $('#healthLabel'),
+        healthDropdown: $('#healthDropdown'),
+        hPostgres: $('#hPostgres'),
+        hNeo4j: $('#hNeo4j'),
+        hEmbedding: $('#hEmbedding'),
+        hCodex: $('#hCodex'),
+        themeToggle: $('#themeToggle'),
+      };
+
+      /* ── C: API Layer ── */
+      async function apiQuery(question, topK = 5) {
+        const res = await fetch('/query', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Access-Scopes': 'public' },
+          body: JSON.stringify({ question, top_k: topK }),
         });
-      });
+        if (!res.ok) throw new Error(`서버 오류 (${res.status})`);
+        return res.json();
+      }
+
+      async function apiHealth() {
+        const res = await fetch('/health');
+        if (!res.ok) throw new Error('health check failed');
+        return res.json();
+      }
+
+      async function apiChannels() {
+        try {
+          const res = await fetch('/health');
+          if (!res.ok) return;
+          // We don't have a dedicated channels endpoint, so use known defaults
+        } catch { /* ignore */ }
+      }
+
+      /* ── D: Render Functions ── */
+      function now() {
+        return new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+      }
+
+      function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+      }
+
+      function renderWelcome() {
+        const examples = [
+          '서버 배포 관련 내용 알려줘',
+          '김민수가 백엔드개발 채널에서 한 작업 요약',
+          '2024년 3월 2일 504 에러 관련 논의',
+        ];
+        const el = document.createElement('div');
+        el.className = 'welcome-card';
+        el.innerHTML = `
+          <div class="welcome-icon">🔍</div>
+          <div class="welcome-title">Graph RAG 검색에 오신 것을 환영합니다</div>
+          <div class="welcome-desc">사내 채팅 로그에서 원하는 정보를 검색해 보세요.<br/>자연어로 질문하면 관련 대화를 찾아드립니다.</div>
+          <div class="welcome-examples">
+            ${examples.map(q => `<button class="example-btn" type="button" data-question="${escapeHtml(q)}">${escapeHtml(q)}</button>`).join('')}
+          </div>
+        `;
+        el.querySelectorAll('.example-btn').forEach(btn => {
+          btn.addEventListener('click', () => {
+            dom.questionInput.value = btn.dataset.question;
+            dom.questionInput.focus();
+            updateSendBtn();
+          });
+        });
+        dom.messages.appendChild(el);
+      }
+
+      function renderUserBubble(text, filters) {
+        const el = document.createElement('div');
+        el.className = 'message message-user';
+
+        let badges = '';
+        const parts = [];
+        if (filters.channels.length) parts.push(`채널: ${filters.channels.join(', ')}`);
+        if (filters.userName) parts.push(`작성자: ${filters.userName}`);
+        if (filters.dateFrom) parts.push(`시작: ${filters.dateFrom}`);
+        if (filters.dateTo) parts.push(`종료: ${filters.dateTo}`);
+        if (parts.length) {
+          badges = `<div class="filter-badges">${parts.map(p => `<span class="filter-badge">${escapeHtml(p)}</span>`).join('')}</div>`;
+        }
+
+        el.innerHTML = `
+          <div class="bubble">${escapeHtml(text)}</div>
+          ${badges}
+          <span class="message-time">${now()}</span>
+        `;
+        dom.messages.appendChild(el);
+        scrollToBottom();
+      }
+
+      function renderLoadingBubble() {
+        const el = document.createElement('div');
+        el.className = 'message message-assistant';
+        el.id = 'loadingBubble';
+        el.innerHTML = `
+          <div class="bubble">
+            <div class="loading-dots"><span></span><span></span><span></span></div>
+          </div>
+        `;
+        dom.messages.appendChild(el);
+        scrollToBottom();
+      }
+
+      function removeLoadingBubble() {
+        const el = $('#loadingBubble');
+        if (el) el.remove();
+      }
+
+      function renderAssistantBubble(data) {
+        const el = document.createElement('div');
+        el.className = 'message message-assistant';
+
+        const isFallback = data.answer_mode === 'fallback_sources_only';
+        const fallbackHtml = isFallback
+          ? `<div class="fallback-notice">ℹ️ LLM 응답을 생성하지 못해 검색된 원문을 표시합니다.</div>`
+          : '';
+
+        const strategyLabel = (data.retrieval_strategy || '').replace(/_/g, ' ');
+
+        const sources = data.sources || [];
+        let sourcesHtml = '';
+        if (sources.length) {
+          const sourceCards = sources.map((s, i) => renderSourceCard(s, i)).join('');
+          sourcesHtml = `
+            <button class="sources-toggle" type="button" aria-expanded="false">
+              <span>출처 ${sources.length}건 보기</span>
+              <span class="sources-toggle-arrow">▼</span>
+            </button>
+            <div class="sources-list">${sourceCards}</div>
+          `;
+        }
+
+        // Clean up fallback answer text for display
+        let answerText = data.answer || '';
+        if (isFallback) {
+          // Parse fallback format to show a cleaner version
+          const lines = answerText.split('\n').filter(l => l.trim());
+          const cleanLines = [];
+          for (const line of lines) {
+            if (line.startsWith('- ')) {
+              // Source reference line — extract the meaningful part
+              const match = line.match(/:\s*(.+)/);
+              if (match) {
+                // Extract content from the bracket format
+                const bracketMatch = match[1].match(/\[[\d-]+,\s*[\d:]+,\s*[^,]+,\s*(.+),\s*[^\]]+\]/);
+                if (bracketMatch) {
+                  cleanLines.push('• ' + bracketMatch[1].trim());
+                } else {
+                  cleanLines.push('• ' + match[1].trim());
+                }
+              }
+            } else if (!line.startsWith('특정 필터')) {
+              cleanLines.push(line);
+            }
+          }
+          answerText = cleanLines.join('\n');
+        }
+
+        el.innerHTML = `
+          <div class="bubble">
+            ${fallbackHtml}
+            <div class="answer-text">${escapeHtml(answerText)}</div>
+            <div><span class="strategy-badge">📊 ${escapeHtml(strategyLabel)}</span></div>
+            ${sourcesHtml}
+          </div>
+          <span class="message-time">${now()}</span>
+        `;
+
+        // Wire source toggle
+        const toggle = el.querySelector('.sources-toggle');
+        const list = el.querySelector('.sources-list');
+        if (toggle && list) {
+          toggle.addEventListener('click', () => {
+            const expanded = toggle.getAttribute('aria-expanded') === 'true';
+            toggle.setAttribute('aria-expanded', String(!expanded));
+            list.classList.toggle('open');
+            toggle.querySelector('span:first-child').textContent =
+              expanded ? `출처 ${sources.length}건 보기` : `출처 접기`;
+          });
+        }
+
+        dom.messages.appendChild(el);
+        scrollToBottom();
+      }
+
+      function renderSourceCard(source, index) {
+        const score = (source.score * 100).toFixed(0);
+        const barWidth = Math.min(100, source.score * 100);
+        const channel = source.channel || '-';
+        const user = source.user_name || '-';
+        const date = source.message_date || '-';
+
+        // Clean content display
+        let content = source.content || '';
+        // If content is in bracket format, extract the message parts
+        const bracketLines = content.split('\n').map(line => {
+          const m = line.match(/^\[[\d-]+,\s*[\d:]+,\s*[^,]+,\s*(.+),\s*[^\]]+\]$/);
+          return m ? m[1].trim() : line;
+        });
+        content = bracketLines.join('\n');
+
+        let neighborsHtml = '';
+        const neighbors = (source.graph_neighbors || []).filter(n => n && n.length > 1);
+        const uniqueNeighbors = [...new Set(neighbors)].slice(0, 8);
+        if (uniqueNeighbors.length) {
+          neighborsHtml = `
+            <div class="graph-neighbors">
+              <span class="graph-label">관련</span>
+              ${uniqueNeighbors.map(n => `<span class="graph-chip">${escapeHtml(n)}</span>`).join('')}
+            </div>
+          `;
+        }
+
+        return `
+          <div class="source-card">
+            <div class="source-header">
+              <span class="source-channel">${escapeHtml(channel)}</span>
+              <span class="source-meta">${escapeHtml(user)} · ${escapeHtml(String(date))}</span>
+              <span class="source-score">
+                <span class="score-bar-track"><span class="score-bar-fill" style="width:${barWidth}%"></span></span>
+                ${score}%
+              </span>
+            </div>
+            <div class="source-content">${escapeHtml(content)}</div>
+            ${neighborsHtml}
+          </div>
+        `;
+      }
+
+      function renderErrorBubble(message) {
+        const el = document.createElement('div');
+        el.className = 'message message-assistant';
+        el.innerHTML = `
+          <div class="error-bubble">⚠️ ${escapeHtml(message)}</div>
+          <span class="message-time">${now()}</span>
+        `;
+        dom.messages.appendChild(el);
+        scrollToBottom();
+      }
+
+      function scrollToBottom() {
+        requestAnimationFrame(() => {
+          dom.messages.scrollTop = dom.messages.scrollHeight;
+        });
+      }
+
+      /* ── E: Filter Logic ── */
+      function buildFilterSuffix(filters) {
+        const parts = [];
+        if (filters.channels.length) parts.push(`채널: ${filters.channels.join(', ')}`);
+        if (filters.userName) parts.push(`작성자: ${filters.userName}`);
+        if (filters.dateFrom) parts.push(`시작일: ${filters.dateFrom}`);
+        if (filters.dateTo) parts.push(`종료일: ${filters.dateTo}`);
+        if (!parts.length) return '';
+        return ' [필터 조건 - ' + parts.join('; ') + ']';
+      }
+
+      function getActiveFilterCount() {
+        let count = 0;
+        if (state.filters.channels.length) count++;
+        if (state.filters.userName) count++;
+        if (state.filters.dateFrom || state.filters.dateTo) count++;
+        return count;
+      }
+
+      function updateFilterBadge() {
+        const count = getActiveFilterCount();
+        dom.filterBadge.textContent = count;
+        dom.filterBadge.classList.toggle('show', count > 0);
+      }
+
+      function renderActiveFilters() {
+        const chips = [];
+        state.filters.channels.forEach(ch => {
+          chips.push({ label: `채널: ${ch}`, clear: () => { state.filters.channels = state.filters.channels.filter(c => c !== ch); } });
+        });
+        if (state.filters.userName) {
+          chips.push({ label: `작성자: ${state.filters.userName}`, clear: () => { state.filters.userName = ''; dom.userFilter.value = ''; } });
+        }
+        if (state.filters.dateFrom) {
+          chips.push({ label: `시작: ${state.filters.dateFrom}`, clear: () => { state.filters.dateFrom = ''; dom.dateFrom.value = ''; } });
+        }
+        if (state.filters.dateTo) {
+          chips.push({ label: `종료: ${state.filters.dateTo}`, clear: () => { state.filters.dateTo = ''; dom.dateTo.value = ''; } });
+        }
+
+        dom.activeFilters.innerHTML = chips.map((c, i) =>
+          `<span class="active-chip">${escapeHtml(c.label)}<button type="button" data-idx="${i}" aria-label="${c.label} 제거">✕</button></span>`
+        ).join('');
+
+        dom.activeFilters.querySelectorAll('button').forEach((btn, i) => {
+          btn.addEventListener('click', () => {
+            chips[i].clear();
+            syncSidebarFromState();
+            renderActiveFilters();
+            updateFilterBadge();
+          });
+        });
+      }
+
+      function syncSidebarFromState() {
+        dom.channelList.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+          cb.checked = state.filters.channels.includes(cb.value);
+        });
+        dom.userFilter.value = state.filters.userName;
+        dom.dateFrom.value = state.filters.dateFrom;
+        dom.dateTo.value = state.filters.dateTo;
+      }
+
+      function readFiltersFromSidebar() {
+        const channels = [];
+        dom.channelList.querySelectorAll('input[type="checkbox"]:checked').forEach(cb => {
+          channels.push(cb.value);
+        });
+        state.filters.channels = channels;
+        state.filters.userName = dom.userFilter.value.trim();
+        state.filters.dateFrom = dom.dateFrom.value;
+        state.filters.dateTo = dom.dateTo.value;
+      }
+
+      function populateChannels(channels) {
+        dom.channelList.innerHTML = channels.map(ch => `
+          <label class="channel-item">
+            <input type="checkbox" value="${escapeHtml(ch)}" />
+            ${escapeHtml(ch)}
+          </label>
+        `).join('');
+      }
+
+      function populateUsers(users) {
+        dom.userDatalist.innerHTML = users.map(u =>
+          `<option value="${escapeHtml(u)}">`
+        ).join('');
+      }
+
+      /* ── F: Event Handlers ── */
+      function updateSendBtn() {
+        dom.sendBtn.disabled = !dom.questionInput.value.trim() || state.isLoading;
+      }
+
+      async function handleSubmit(e) {
+        e.preventDefault();
+        const question = dom.questionInput.value.trim();
+        if (!question || state.isLoading) return;
+
+        state.isLoading = true;
+        updateSendBtn();
+
+        const filters = { ...state.filters, channels: [...state.filters.channels] };
+        const effectiveQuestion = question + buildFilterSuffix(filters);
+
+        dom.questionInput.value = '';
+        updateSendBtn();
+
+        renderUserBubble(question, filters);
+        renderLoadingBubble();
+
+        try {
+          const data = await apiQuery(effectiveQuestion);
+          removeLoadingBubble();
+          renderAssistantBubble(data);
+        } catch (err) {
+          removeLoadingBubble();
+          renderErrorBubble(`요청 처리 중 오류가 발생했습니다: ${err.message}`);
+        } finally {
+          state.isLoading = false;
+          updateSendBtn();
+          dom.questionInput.focus();
+        }
+      }
+
+      function toggleSidebar(open) {
+        state.sidebarOpen = typeof open === 'boolean' ? open : !state.sidebarOpen;
+        dom.sidebar.classList.toggle('open', state.sidebarOpen);
+        dom.sidebarBackdrop.classList.toggle('open', state.sidebarOpen);
+        if (state.sidebarOpen) {
+          syncSidebarFromState();
+        }
+      }
+
+      /* ── G: Health Polling ── */
+      async function pollHealth() {
+        try {
+          const data = await apiHealth();
+          state.health = data;
+          dom.healthDot.className = 'health-dot ' + (data.status || 'error');
+          dom.healthLabel.textContent = data.status === 'ok' ? '정상' : '일부 장애';
+
+          function setVal(el, val) {
+            el.textContent = val;
+            el.className = 'health-row-value ' + (val === 'ok' ? 'ok' : val.startsWith('error') ? 'error' : '');
+          }
+          setVal(dom.hPostgres, data.postgres || '-');
+          setVal(dom.hNeo4j, data.neo4j || '-');
+          setVal(dom.hEmbedding, data.embedding || '-');
+          setVal(dom.hCodex, data.codex_proxy || '-');
+        } catch {
+          dom.healthDot.className = 'health-dot error';
+          dom.healthLabel.textContent = '연결 실패';
+        }
+      }
+
+      /* ── H: Init ── */
+      function init() {
+        // Theme
+        dom.body.dataset.theme = state.theme;
+
+        // Render welcome
+        renderWelcome();
+
+        // Known channels & users (hardcoded from sample data + can be extended)
+        state.knownChannels = ['백엔드개발', '프론트엔드', '인프라', '전체공지'];
+        state.knownUsers = ['김민수', '박지현', '이서준', '최유나', '한도윤', '정하늘'];
+        populateChannels(state.knownChannels);
+        populateUsers(state.knownUsers);
+
+        // Events
+        dom.inputBar.addEventListener('submit', handleSubmit);
+        dom.questionInput.addEventListener('input', updateSendBtn);
+
+        dom.filterToggle.addEventListener('click', () => toggleSidebar());
+        dom.sidebarClose.addEventListener('click', () => toggleSidebar(false));
+        dom.sidebarBackdrop.addEventListener('click', () => toggleSidebar(false));
+
+        dom.applyFilters.addEventListener('click', () => {
+          readFiltersFromSidebar();
+          renderActiveFilters();
+          updateFilterBadge();
+          toggleSidebar(false);
+        });
+
+        dom.resetFilters.addEventListener('click', () => {
+          state.filters = { channels: [], userName: '', dateFrom: '', dateTo: '' };
+          syncSidebarFromState();
+          renderActiveFilters();
+          updateFilterBadge();
+        });
+
+        dom.healthBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          dom.healthDropdown.classList.toggle('open');
+        });
+        document.addEventListener('click', () => {
+          dom.healthDropdown.classList.remove('open');
+        });
+
+        dom.themeToggle.addEventListener('click', () => {
+          state.theme = state.theme === 'light' ? 'dark' : 'light';
+          dom.body.dataset.theme = state.theme;
+          localStorage.setItem('graph-rag-theme', state.theme);
+          dom.themeToggle.setAttribute('aria-label',
+            state.theme === 'light' ? '어두운 모드로 전환' : '밝은 모드로 전환');
+        });
+
+        // Escape to close sidebar
+        document.addEventListener('keydown', (e) => {
+          if (e.key === 'Escape' && state.sidebarOpen) toggleSidebar(false);
+        });
+
+        // Health polling
+        pollHealth();
+        setInterval(pollHealth, 30000);
+
+        // Focus
+        dom.questionInput.focus();
+        updateSendBtn();
+        updateFilterBadge();
+      }
+
+      init();
+    })();
     </script>
   </body>
 </html>

@@ -10,6 +10,13 @@ class QueryAnalyzer:
     EXACT_DATE_PATTERN = re.compile(r"(\d{4}-\d{2}-\d{2})")
     KOREAN_DATE_PATTERN = re.compile(r"(\d{4})년\s*(\d{1,2})월(?:\s*(\d{1,2})일)?")
     KOREAN_NAME_PATTERN = re.compile(r"([가-힣]{3})")
+    KOREAN_NAME_BLACKLIST = frozenset({
+        "오늘은", "이번엔", "관련된", "진행된", "어떤거", "지금은", "최근에",
+        "어제는", "내일은", "그리고", "그래서", "하지만", "그런데", "때문에",
+        "무엇을", "어떻게", "이것은", "저것은", "에서는", "에서의", "으로의",
+        "했던거", "한것은", "된것은", "있었던", "없었던", "했는데", "인것은",
+        "위해서", "대해서", "통해서", "따르면", "가지고", "만들어", "시작된",
+    })
 
     def analyze(
         self,
@@ -34,15 +41,18 @@ class QueryAnalyzer:
                 year = int(korean_date.group(1))
                 month = int(korean_date.group(2))
                 day = korean_date.group(3)
-                if day:
-                    parsed_date = date(year, month, int(day))
-                    filters.date_from = parsed_date
-                    filters.date_to = parsed_date
-                else:
-                    filters.date_from = date(year, month, 1)
-                    next_month = date(year + (month // 12), (month % 12) + 1, 1)
-                    filters.date_to = next_month - timedelta(days=1)
-                clean_question = clean_question.replace(korean_date.group(0), " ")
+                try:
+                    if day:
+                        parsed_date = date(year, month, int(day))
+                        filters.date_from = parsed_date
+                        filters.date_to = parsed_date
+                    elif 1 <= month <= 12:
+                        filters.date_from = date(year, month, 1)
+                        next_month = date(year + (month // 12), (month % 12) + 1, 1)
+                        filters.date_to = next_month - timedelta(days=1)
+                    clean_question = clean_question.replace(korean_date.group(0), " ")
+                except ValueError:
+                    pass
             elif "오늘" in question:
                 filters.date_from = date.today()
                 filters.date_to = date.today()
@@ -69,11 +79,15 @@ class QueryAnalyzer:
                 clean_question = clean_question.replace(user, " ")
                 break
 
-        if not filters.user_name:
-            name_match = self.KOREAN_NAME_PATTERN.search(question)
-            if name_match and name_match.group(1) not in {"오늘은", "이번엔", "관련된"}:
-                filters.user_name = name_match.group(1)
-                clean_question = clean_question.replace(name_match.group(1), " ")
+        if not filters.user_name and users:
+            for name_match in self.KOREAN_NAME_PATTERN.finditer(question):
+                candidate = name_match.group(1)
+                if candidate in self.KOREAN_NAME_BLACKLIST:
+                    continue
+                if candidate in users:
+                    filters.user_name = candidate
+                    clean_question = clean_question.replace(candidate, " ")
+                    break
 
         intent = self._detect_intent(question)
         entities = self._extract_entities(clean_question)
@@ -91,7 +105,7 @@ class QueryAnalyzer:
             return "relationship"
         if any(keyword in question for keyword in ("흐름", "진행", "타임라인")):
             return "timeline"
-        if any(keyword in question for keyword in ("가장", "통계", "몇 명", "활발")):
+        if any(keyword in question for keyword in ("가장", "통계", "몇 명", "활발", "모두", "목록", "전체", "리스트", "몇 개")):
             return "aggregate"
         if any(keyword in question for keyword in ("요약", "무슨 일이", "정리")):
             return "summary"
