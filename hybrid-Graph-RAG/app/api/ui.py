@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Request
 from fastapi.templating import Jinja2Templates
 
+from app.api.runtime import require_insights_service, require_search_service
 from app.models.api import InsightsOverviewResponse, MessageDetailResponse, SearchMessagesRequest
 
 
@@ -16,20 +17,6 @@ def _split_csv(value: str | None) -> list[str]:
     if not value:
         return []
     return [item.strip() for item in value.split(",") if item.strip()]
-
-
-def _require_search_service(request: Request):
-    service = getattr(request.app.state, "search_service", None)
-    if service is None:
-        raise RuntimeError("search service is not available")
-    return service
-
-
-def _require_insights_service(request: Request):
-    service = getattr(request.app.state, "insights_service", None)
-    if service is None:
-        raise RuntimeError("insights service is not available")
-    return service
 
 
 @router.get("/")
@@ -56,10 +43,10 @@ def search_page(
             rooms=room_list,
             users=user_list,
         )
-        search_response = _require_search_service(request).search(payload)
+        search_response = require_search_service(request).search(payload)
 
     if message_id:
-        detail_response = _require_search_service(request).get_message_detail(message_id)
+        detail_response = require_search_service(request).get_message_detail(message_id)
 
     return templates.TemplateResponse(
         request=request,
@@ -80,7 +67,7 @@ def search_page(
 @router.get("/messages/{message_id}")
 def message_detail_page(request: Request, message_id: str):
     templates = _templates(request)
-    detail: MessageDetailResponse = _require_search_service(request).get_message_detail(message_id)
+    detail: MessageDetailResponse = require_search_service(request).get_message_detail(message_id)
     return templates.TemplateResponse(
         request=request,
         name="message_detail.html",
@@ -97,7 +84,7 @@ def insights_page(
     users: str | None = None,
 ):
     templates = _templates(request)
-    response: InsightsOverviewResponse = _require_insights_service(request).overview(
+    response: InsightsOverviewResponse = require_insights_service(request).overview(
         date_from=date_from,
         date_to=date_to,
         rooms=_split_csv(rooms),

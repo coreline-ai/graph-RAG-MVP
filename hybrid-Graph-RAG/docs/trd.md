@@ -34,23 +34,23 @@
 - Neo4j 5.18.1 이상
 - Neo4j Python Driver
 
-### 2.2 GraphRAG 및 모델 선택
+### 2.2 Retrieval 및 모델 선택
 
-- GraphRAG 라이브러리: `neo4j-graphrag`
-  - Neo4j 공식 1st-party 패키지 사용
-  - `neo4j-genai`는 deprecated로 간주하고 신규 구현에 사용하지 않음
+- 그래프/질의 계층: `neo4j` Python Driver + 직접 작성한 Cypher 질의
+  - 메타데이터 필터, 벡터 검색, full-text 검색, 그래프 컨텍스트 확장을 애플리케이션 코드에서 조합
+  - 현재 MVP는 Microsoft GraphRAG나 `neo4j-graphrag`를 직접 연동하지 않음
 - 임베딩 모델: `BAAI/bge-m3`
   - dense vector 1024 차원 사용
   - 현재 채팅 로그는 짧은 문장 중심이므로 dense retrieval만 MVP에 포함
 - KSS
-  - 현재 MVP 채팅 로그에는 적용하지 않음
-  - 향후 긴 문서 ingestion 시 `split_sentences` 용도로만 도입
+  - 현재 MVP에는 사용하지 않음
+  - 향후 긴 문서 ingestion 시 sentence split 용도로만 검토
 
 ### 2.3 기술 선택 근거
 
-- `neo4j-graphrag` 공식 문서: https://neo4j.com/docs/neo4j-graphrag-python/current/index.html
 - `BAAI/bge-m3` 모델 카드: https://huggingface.co/BAAI/bge-m3
-- `KSS` 저장소: https://github.com/hyunwoongko/kss
+- Neo4j Vector Index 문서: https://neo4j.com/docs/cypher-manual/current/indexes/semantic-indexes/vector-indexes/
+- Neo4j Full-text Index 문서: https://neo4j.com/docs/cypher-manual/current/indexes/semantic-indexes/full-text-indexes/
 
 ## 3. 시스템 아키텍처
 
@@ -132,7 +132,6 @@ content = ", ".join(parts[3:-1])
 
 - 에러 로그 파일에 `source_file`, `line_no`, `raw_text`, `error_code` 기록
 - 적재 통계에 실패 건수 반영
-- 배치 종료 시 실패율이 0보다 크면 경고 반환
 - 실패율이 1% 이상이면 배치 실패로 간주
 
 ## 5. 정규화 데이터 모델
@@ -159,7 +158,7 @@ class ChatMessageRecord(TypedDict):
 - `message_id`: `sha1(source_file + ":" + line_no + ":" + raw_text)`로 생성
 - `occurred_at`: `date + "T" + time`을 UTC naive ISO 8601 문자열로 저장
 - `embedding_status`: `pending`, `completed`, `failed` 중 하나
-- `source_file`: 상대 경로 기준 저장
+- `source_file`: 절대 경로를 canonicalize해서 저장
 
 ## 6. Neo4j 그래프 스키마
 

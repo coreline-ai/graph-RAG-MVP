@@ -1,5 +1,13 @@
+from pathlib import Path
+import sys
+
 from fastapi.testclient import TestClient
 import pytest
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    # Keep tests runnable via both `pytest` console scripts and `python -m pytest`.
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 from app.main import create_app
 from app.models.api import (
@@ -97,10 +105,22 @@ class FakeInsightsService:
         )
 
 
+class FakeNeo4jClient:
+    def verify_connectivity(self, raise_on_error: bool = True) -> bool:
+        return True
+
+    def fetch_total_messages(self) -> int:
+        return 1
+
+    def fetch_last_ingestion_timestamp(self) -> str:
+        return "2024-01-05T07:59:12"
+
+
 @pytest.fixture
 def test_app():
     settings = Settings()
     app = create_app(settings=settings, enable_runtime=False)
+    app.state.neo4j_client = FakeNeo4jClient()
     app.state.search_service = FakeSearchService()
     app.state.insights_service = FakeInsightsService()
     return app

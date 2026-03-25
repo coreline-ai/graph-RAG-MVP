@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from neo4j.exceptions import Neo4jError
 
 from app.api.health import router as health_router
 from app.api.insights import router as insights_router
@@ -45,8 +46,6 @@ def _attach_runtime(app: FastAPI, settings: Settings) -> None:
         password=settings.neo4j_password,
         database=settings.neo4j_database,
     )
-    neo4j_client.verify_connectivity()
-
     search_repo = SearchRepository(neo4j_client)
     insights_repo = InsightsRepository(neo4j_client)
     embedder = BgeM3Embedder(settings=settings)
@@ -54,6 +53,10 @@ def _attach_runtime(app: FastAPI, settings: Settings) -> None:
     app.state.neo4j_client = neo4j_client
     app.state.search_service = SearchService(search_repo=search_repo, embedder=embedder)
     app.state.insights_service = InsightsService(insights_repo=insights_repo)
+    if not neo4j_client.verify_connectivity(raise_on_error=False):
+        logger.warning(
+            "neo4j is unavailable during startup; health will report degraded until connectivity recovers"
+        )
 
 
 def _close_runtime(app: FastAPI) -> None:
@@ -95,6 +98,11 @@ def create_app(settings: Settings | None = None, enable_runtime: bool = True) ->
     @app.exception_handler(RuntimeError)
     async def runtime_error_handler(_: Request, exc: RuntimeError):
         return JSONResponse(status_code=503, content={"detail": str(exc)})
+
+    @app.exception_handler(Neo4jError)
+    async def neo4j_error_handler(_: Request, exc: Neo4jError):
+        logger.warning("neo4j request failed: %s", exc)
+        return JSONResponse(status_code=503, content={"detail": "neo4j is not connected"})
 
     app.include_router(health_router)
     app.include_router(search_router)

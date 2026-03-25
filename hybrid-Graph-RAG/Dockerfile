@@ -11,9 +11,11 @@ RUN pip install --no-cache-dir uv
 
 WORKDIR /app
 
-COPY pyproject.toml README.md .python-version ./
-RUN uv sync --no-dev
+COPY pyproject.toml uv.lock README.md .python-version ./
+RUN uv sync --locked --no-dev --no-install-project
 
 COPY . .
+
+RUN uv sync --locked --no-dev
 
 CMD ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
