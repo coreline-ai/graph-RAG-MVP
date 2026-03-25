@@ -24,7 +24,7 @@ import sys
 import threading
 import time
 import uuid
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from queue import Queue, Empty
 
 logging.basicConfig(
@@ -54,7 +54,6 @@ class StreamWorker:
     def __init__(self, model: str, system_prompt: str | None = None):
         self.model = model
         self.system_prompt = system_prompt
-        self.session_id = str(uuid.uuid4())
         self.proc: subprocess.Popen | None = None
         self.lock = threading.Lock()
         self._spawn()
@@ -80,7 +79,6 @@ class StreamWorker:
         )
         os.set_blocking(self.proc.stdout.fileno(), False)
         os.set_blocking(self.proc.stderr.fileno(), False)
-        self.session_id = str(uuid.uuid4())
         log.info("Spawned worker pid=%d model=%s", self.proc.pid, self.model)
 
     def is_alive(self) -> bool:
@@ -98,12 +96,13 @@ class StreamWorker:
             self._ensure_alive()
             # Drain any leftover output from previous call
             self._drain()
+            request_session_id = str(uuid.uuid4())
 
             msg = json.dumps({
                 "type": "user",
                 "message": {"role": "user", "content": user_prompt},
                 "parent_tool_use_id": None,
-                "session_id": self.session_id,
+                "session_id": request_session_id,
             }) + "\n"
 
             t0 = time.perf_counter()
@@ -338,7 +337,7 @@ def main():
     log.info("Spawning %d stream-json workers (model=%s)...", args.workers, args.model)
     pool = WorkerPool(args.workers, args.model)
 
-    server = HTTPServer((args.host, args.port), ProxyHandler)
+    server = ThreadingHTTPServer((args.host, args.port), ProxyHandler)
     log.info("══════════════════════════════════════════")
     log.info("  Claude CLI Proxy (Stream-JSON Pool)")
     log.info("  http://%s:%d", args.host, args.port)

@@ -43,9 +43,18 @@ class RetrievalService:
         self._users_cache: list[str] = []
         self._cache_ts: float = 0.0
 
+    def invalidate_metadata_cache(self) -> None:
+        self._channels_cache = []
+        self._users_cache = []
+        self._cache_ts = 0.0
+
     async def _get_metadata_lists(self) -> tuple[list[str], list[str]]:
         now = time.monotonic()
-        if now - self._cache_ts > _METADATA_CACHE_TTL or not self._channels_cache:
+        if (
+            now - self._cache_ts > _METADATA_CACHE_TTL
+            or not self._channels_cache
+            or not self._users_cache
+        ):
             self._channels_cache = await self.postgres.list_channels()
             self._users_cache = await self.postgres.list_users()
             self._cache_ts = now

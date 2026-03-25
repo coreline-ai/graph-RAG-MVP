@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
 from uuid import uuid4
 
 from app.adapters.embedding_provider import BgeM3EmbeddingProvider
@@ -9,6 +10,9 @@ from app.config import Settings
 from app.schemas import DocumentMetadata
 from app.services.chunking import ChunkingService
 from app.services.graph_builder import GraphBuilder
+
+if TYPE_CHECKING:
+    from app.services.retrieval import RetrievalService
 
 
 class IngestService:
@@ -21,6 +25,7 @@ class IngestService:
         embedding_provider: BgeM3EmbeddingProvider,
         chunking: ChunkingService,
         graph_builder: GraphBuilder,
+        retrieval: "RetrievalService | None" = None,
     ) -> None:
         self.settings = settings
         self.postgres = postgres
@@ -28,6 +33,7 @@ class IngestService:
         self.embedding_provider = embedding_provider
         self.chunking = chunking
         self.graph_builder = graph_builder
+        self.retrieval = retrieval
 
     async def ingest_document(
         self,
@@ -62,6 +68,7 @@ class IngestService:
         except Exception:
             await self.postgres.delete_document(document.document_id)
             raise
+        self._invalidate_retrieval_cache()
         return document
 
     async def list_documents(self) -> list[DocumentMetadata]:
@@ -71,8 +78,18 @@ class IngestService:
         return await self.postgres.get_document(document_id)
 
     async def delete_document(self, document_id: str) -> bool:
-        try:
-            await self.neo4j.delete_document(document_id)
-        except Exception:
-            pass
-        return await self.postgres.delete_document(document_id)
+        document = await self.postgres.get_document(document_id)
+        if document is None:
+            return False
+
+        await self.neo4j.delete_document(document_id)
+        deleted_in_postgres = await self.postgres.delete_document(document_id)
+        if not deleted_in_postgres:
+            raise RuntimeError(f"Document {document_id} was not deleted from Postgres.")
+
+        self._invalidate_retrieval_cache()
+        return True
+
+    def _invalidate_retrieval_cache(self) -> None:
+        if self.retrieval is not None:
+            self.retrieval.invalidate_metadata_cache()

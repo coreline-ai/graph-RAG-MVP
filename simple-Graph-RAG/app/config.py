@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from typing import Literal
 from urllib.parse import quote_plus
 
 from pydantic import Field
@@ -40,6 +41,7 @@ class Settings(BaseSettings):
     embedding_device: str = "cpu"
 
     codex_proxy_base_url: str = "http://127.0.0.1:8800"
+    codex_proxy_api_style: Literal["auto", "legacy", "openai_responses"] = "auto"
     codex_model: str = "gpt-5.3-codex"
     codex_timeout_seconds: int = 45
 

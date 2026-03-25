@@ -133,11 +133,22 @@ cp .env.example .env
 # .env 파일에서 필요 시 설정 수정
 ```
 
-### 4. Claude CLI Proxy
+### 4. LLM Proxy
+
+기본값은 현재 저장소의 `claude_proxy.py`를 사용합니다.
 
 ```bash
 # 별도 터미널에서 실행
 python3 scripts/claude_proxy.py --port 8800 --model sonnet --workers 2
+```
+
+`multi_model_tui` 프록시를 쓰려면 OpenAI 호환 엔드포인트에 연결하면 됩니다.
+
+```bash
+# multi_model_tui 기본 포트 예시
+CODEX_PROXY_BASE_URL=http://127.0.0.1:4317
+CODEX_PROXY_API_STYLE=openai_responses
+CODEX_MODEL=gpt-5
 ```
 
 ### 5. Run Server
@@ -175,7 +186,7 @@ simple-Graph-RAG/
 │   │   ├── postgres_vector_store.py  # pgvector 커넥션 풀 + CRUD
 │   │   ├── neo4j_store.py            # Neo4j 그래프 드라이버
 │   │   ├── embedding_provider.py     # bge-m3 임베딩 모델
-│   │   └── codex_proxy.py            # Claude proxy HTTP 클라이언트
+│   │   └── codex_proxy.py            # LLM proxy HTTP 클라이언트 (legacy / OpenAI-compatible)
 │   ├── api/
 │   │   ├── health.py            # GET /health
 │   │   ├── query.py             # POST /query
@@ -370,4 +381,3 @@ Stream-JSON 프로세스 풀 적용 후 벤치마크:
 ## License
 
 MIT
-

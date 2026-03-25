@@ -52,14 +52,6 @@ class ServiceContainer:
         chunking = ChunkingService(settings)
         graph_builder = GraphBuilder()
         query_analyzer = QueryAnalyzer()
-        ingest = IngestService(
-            settings=settings,
-            postgres=postgres,
-            neo4j=neo4j,
-            embedding_provider=embedding_provider,
-            chunking=chunking,
-            graph_builder=graph_builder,
-        )
         retrieval = RetrievalService(
             settings=settings,
             postgres=postgres,
@@ -67,6 +59,15 @@ class ServiceContainer:
             embedding_provider=embedding_provider,
             codex_proxy=codex_proxy,
             query_analyzer=query_analyzer,
+        )
+        ingest = IngestService(
+            settings=settings,
+            postgres=postgres,
+            neo4j=neo4j,
+            embedding_provider=embedding_provider,
+            chunking=chunking,
+            graph_builder=graph_builder,
+            retrieval=retrieval,
         )
         return cls(
             settings=settings,

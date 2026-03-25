@@ -117,19 +117,24 @@ class Neo4jStore:
                 )
 
     async def delete_document(self, document_id: str) -> bool:
+        document_rows = await self._run_query(
+            """
+            MATCH (d:Document {document_id: $document_id})
+            OPTIONAL MATCH (d)<-[:PART_OF]-(c:Chunk)
+            OPTIONAL MATCH (c)--(n)
+            WHERE n:User OR n:Channel OR n:Date OR n:Entity OR n:Topic
+            RETURN count(DISTINCT d) AS doc_count, collect(DISTINCT id(n)) AS neighbor_ids
+            """,
+            document_id=document_id,
+        )
+        if not document_rows or document_rows[0]["doc_count"] == 0:
+            return False
+
+        neighbor_ids = [value for value in document_rows[0]["neighbor_ids"] if value is not None]
         await self._run_query(
             """
             MATCH (d:Document {document_id: $document_id})<-[:PART_OF]-(c:Chunk)
-            WITH d, c, c-[r]-() AS rels
-            WITH d, c, collect(DISTINCT startNode(r)) + collect(DISTINCT endNode(r)) AS neighbors
             DETACH DELETE c
-            WITH d, neighbors
-            UNWIND neighbors AS n
-            WITH d, n
-            WHERE (n:User OR n:Channel OR n:Date OR n:Entity OR n:Topic)
-              AND n <> d
-              AND NOT (n)--()
-            DELETE n
             """,
             document_id=document_id,
         )
@@ -140,6 +145,18 @@ class Neo4jStore:
             """,
             document_id=document_id,
         )
+        if neighbor_ids:
+            await self._run_query(
+                """
+                UNWIND $neighbor_ids AS neighbor_id
+                MATCH (n)
+                WHERE id(n) = neighbor_id
+                  AND (n:User OR n:Channel OR n:Date OR n:Entity OR n:Topic)
+                  AND NOT (n)--()
+                DELETE n
+                """,
+                neighbor_ids=neighbor_ids,
+            )
         return True
 
     async def expand_from_seed_chunks(
