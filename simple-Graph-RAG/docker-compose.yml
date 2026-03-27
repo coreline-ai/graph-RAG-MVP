@@ -21,6 +21,7 @@ services:
     container_name: simple-graph-rag-neo4j
     environment:
       NEO4J_AUTH: neo4j/graph-rag-password
+      NEO4J_PLUGINS: '["graph-data-science"]'
       NEO4J_server_memory_heap_initial__size: 128m
       NEO4J_server_memory_heap_max__size: 128m
       NEO4J_server_memory_pagecache_size: 64m

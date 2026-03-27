@@ -796,7 +796,162 @@
         }
         .messages { scroll-behavior: auto; }
       }
+
+      /* ============================================
+         DEBUG PANELS
+         ============================================ */
+      .debug-toggle {
+        width: 36px; height: 36px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: var(--radius-sm);
+        color: var(--text-secondary);
+        transition: all var(--transition-fast);
+      }
+      .debug-toggle:hover { background: var(--bg-secondary); color: var(--text-primary); }
+      .debug-toggle.active { color: var(--accent); background: var(--accent-soft); }
+
+      .debug-panels {
+        display: grid;
+        gap: var(--space-3);
+        margin-top: var(--space-3);
+        padding-top: var(--space-3);
+        border-top: 1px solid var(--border);
+      }
+      .debug-row { display: grid; gap: var(--space-3); }
+      .debug-row-full { grid-template-columns: 1fr; }
+      .debug-row-2 { grid-template-columns: 2fr 3fr; }
+      .debug-row-2r { grid-template-columns: 3fr 2fr; }
+
+      .debug-panel {
+        background: var(--bg-primary);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-md);
+        overflow: hidden;
+      }
+      .debug-panel-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: var(--space-2) var(--space-3);
+        background: var(--bg-secondary);
+        font-size: var(--font-xs);
+        font-weight: 600;
+        color: var(--text-secondary);
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        cursor: pointer;
+        user-select: none;
+      }
+      .debug-panel-header:hover { color: var(--text-primary); }
+      .debug-panel-body {
+        padding: var(--space-3);
+        min-height: 60px;
+      }
+      .debug-panel-body canvas { max-width: 100%; }
+      .debug-panel-body svg { max-width: 100%; }
+
+      .comparison-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: var(--space-2);
+      }
+      .comparison-col {
+        padding: var(--space-2);
+        border-radius: var(--radius-sm);
+        background: var(--bg-surface);
+        text-align: center;
+      }
+      .comparison-col h4 {
+        font-size: var(--font-xs);
+        font-weight: 600;
+        color: var(--text-secondary);
+        margin-bottom: var(--space-1);
+      }
+      .comparison-count {
+        display: block;
+        font-size: var(--font-lg);
+        font-weight: 700;
+        color: var(--accent);
+        margin-bottom: var(--space-1);
+      }
+      .comparison-chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 2px;
+        justify-content: center;
+      }
+      .comparison-chip {
+        padding: 1px 5px;
+        background: var(--chip-bg);
+        color: var(--chip-text);
+        font-size: 10px;
+        border-radius: var(--radius-full);
+      }
+      .comparison-discovery {
+        grid-column: 1 / -1;
+        padding: var(--space-2) var(--space-3);
+        background: rgba(22, 163, 74, 0.08);
+        border-radius: var(--radius-sm);
+        font-size: var(--font-sm);
+        font-weight: 500;
+        color: var(--accent-green);
+        text-align: center;
+      }
+      [data-theme="dark"] .comparison-discovery { background: rgba(22, 163, 74, 0.15); }
+
+      .radar-formula {
+        font-size: var(--font-xs);
+        color: var(--text-tertiary);
+        font-family: monospace;
+        margin-top: var(--space-2);
+        text-align: center;
+        word-break: break-all;
+      }
+
+      .source-card.radar-active {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 2px var(--accent-soft);
+      }
+
+      .graph-legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--space-2);
+        padding: var(--space-2) 0;
+        font-size: var(--font-xs);
+      }
+      .graph-legend-item {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }
+      .graph-legend-dot {
+        width: 10px; height: 10px;
+        border-radius: 50%;
+      }
+
+      .d3-tooltip {
+        position: absolute;
+        padding: 4px 8px;
+        background: var(--bg-surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        font-size: var(--font-xs);
+        pointer-events: none;
+        box-shadow: var(--shadow-md);
+        z-index: 100;
+        white-space: nowrap;
+      }
+
+      @media (max-width: 768px) {
+        .debug-row-2, .debug-row-2r { grid-template-columns: 1fr; }
+        .comparison-grid { grid-template-columns: 1fr; }
+      }
     </style>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js" defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js" defer></script>
   </head>
 
   <body data-theme="light">
@@ -817,6 +972,9 @@
             <div class="health-row"><span class="health-row-label">Embedding</span><span class="health-row-value" id="hEmbedding">-</span></div>
             <div class="health-row"><span class="health-row-label">LLM Proxy</span><span class="health-row-value" id="hCodex">-</span></div>
           </div>
+        </button>
+        <button class="debug-toggle" id="debugToggle" type="button" aria-label="디버그 패널 토글" title="Debug">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
         </button>
         <button class="theme-toggle" id="themeToggle" type="button" aria-label="테마 전환">
           <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
@@ -901,6 +1059,7 @@
         health: null,
         theme: localStorage.getItem('graph-rag-theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'),
         sidebarOpen: false,
+        debugMode: false,
         isLoading: false,
         knownChannels: [],
         knownUsers: [],
@@ -938,6 +1097,7 @@
         hEmbedding: $('#hEmbedding'),
         hCodex: $('#hCodex'),
         themeToggle: $('#themeToggle'),
+        debugToggle: $('#debugToggle'),
       };
 
       /* ── C: API Layer ── */
@@ -945,7 +1105,7 @@
         const res = await fetch('/query', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'X-Access-Scopes': 'public' },
-          body: JSON.stringify({ question, top_k: topK }),
+          body: JSON.stringify({ question, top_k: topK, debug: state.debugMode }),
         });
         if (!res.ok) throw new Error(`서버 오류 (${res.status})`);
         return res.json();
@@ -1116,8 +1276,353 @@
           });
         }
 
+        // Render debug panels if data available
+        if (data.debug) {
+          const debugContainer = document.createElement('div');
+          debugContainer.className = 'debug-panels';
+          el.querySelector('.bubble').appendChild(debugContainer);
+          renderDebugPanels(data.debug, debugContainer, data.sources || []);
+        }
+
         dom.messages.appendChild(el);
         scrollToBottom();
+      }
+
+      /* ── D2: Debug Visualization Renderers ── */
+      const NODE_COLORS = { Entity: '#F59E0B', User: '#3B82F6', Channel: '#10B981', Chunk: '#6B7280', Community: '#8B5CF6', Date: '#EC4899' };
+
+      function renderDebugPanels(debug, container, sources) {
+        // Row 1: Pipeline Waterfall
+        const row1 = document.createElement('div');
+        row1.className = 'debug-row debug-row-full';
+        row1.innerHTML = '<div class="debug-panel" id="dp-waterfall"><div class="debug-panel-header">Pipeline Waterfall</div><div class="debug-panel-body"></div></div>';
+        container.appendChild(row1);
+        renderWaterfallChart(row1.querySelector('.debug-panel-body'), debug);
+
+        // Row 2: Radar + Source Comparison
+        const row2 = document.createElement('div');
+        row2.className = 'debug-row debug-row-2';
+        row2.innerHTML = `
+          <div class="debug-panel" id="dp-radar"><div class="debug-panel-header">5-Factor Ranking</div><div class="debug-panel-body"></div></div>
+          <div class="debug-panel" id="dp-comparison"><div class="debug-panel-header">Source Comparison</div><div class="debug-panel-body"></div></div>
+        `;
+        container.appendChild(row2);
+        renderRadarChart(row2.querySelector('#dp-radar .debug-panel-body'), debug, sources, container);
+        renderSourceComparison(row2.querySelector('#dp-comparison .debug-panel-body'), debug);
+
+        // Row 3: Graph Viewer + Entity Map
+        const row3 = document.createElement('div');
+        row3.className = 'debug-row debug-row-2r';
+        row3.innerHTML = `
+          <div class="debug-panel" id="dp-graph"><div class="debug-panel-header">Graph Traversal</div><div class="debug-panel-body"></div></div>
+          <div class="debug-panel" id="dp-entity"><div class="debug-panel-header">Entity Map</div><div class="debug-panel-body"></div></div>
+        `;
+        container.appendChild(row3);
+        renderGraphViewer(row3.querySelector('#dp-graph .debug-panel-body'), debug);
+        renderEntityMap(row3.querySelector('#dp-entity .debug-panel-body'), debug);
+      }
+
+      function renderWaterfallChart(container, debug) {
+        if (!debug.timing || !debug.timing.length || typeof Chart === 'undefined') {
+          container.textContent = 'No timing data';
+          return;
+        }
+        const canvas = document.createElement('canvas');
+        canvas.height = 220;
+        container.appendChild(canvas);
+        const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#2563EB';
+        const red = getComputedStyle(document.documentElement).getPropertyValue('--accent-red').trim() || '#DC2626';
+        new Chart(canvas, {
+          type: 'bar',
+          data: {
+            labels: debug.timing.map(t => t.step),
+            datasets: [{
+              data: debug.timing.map(t => t.duration_ms),
+              backgroundColor: debug.timing.map(t => t.step === debug.bottleneck_step ? red : accent),
+              borderRadius: 3,
+            }]
+          },
+          options: {
+            indexAxis: 'y',
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              title: { display: true, text: `Total: ${debug.total_time_ms.toFixed(0)}ms`, font: { size: 11 } },
+              legend: { display: false },
+              tooltip: { callbacks: { label: ctx => `${ctx.raw.toFixed(1)}ms` } },
+            },
+            scales: {
+              x: { title: { display: true, text: 'ms', font: { size: 10 } }, ticks: { font: { size: 10 } } },
+              y: { ticks: { font: { size: 10 } } },
+            },
+          }
+        });
+      }
+
+      function renderRadarChart(container, debug, sources, parentContainer) {
+        if (!debug.intent_weights || typeof Chart === 'undefined') {
+          container.textContent = 'No score data';
+          return;
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = 280; canvas.height = 280;
+        container.appendChild(canvas);
+        const iw = debug.intent_weights;
+        const chart = new Chart(canvas, {
+          type: 'radar',
+          data: {
+            labels: ['Vector', 'Graph', 'Entity', 'Metadata', 'Recency'],
+            datasets: [{
+              label: `Weights (${iw.intent})`,
+              data: [iw.vector, iw.graph, iw.entity, iw.metadata, iw.recency],
+              borderDash: [5, 5],
+              borderColor: 'rgba(37,99,235,0.7)',
+              backgroundColor: 'transparent',
+              pointRadius: 3,
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            scales: { r: { min: 0, max: 1, ticks: { stepSize: 0.2, font: { size: 9 } }, pointLabels: { font: { size: 10 } } } },
+            plugins: { legend: { position: 'bottom', labels: { font: { size: 10 } } } },
+          }
+        });
+        const formulaDiv = document.createElement('div');
+        formulaDiv.className = 'radar-formula';
+        formulaDiv.textContent = 'Click a source card to overlay scores';
+        container.appendChild(formulaDiv);
+
+        // Wire source card clicks
+        setTimeout(() => {
+          parentContainer.closest('.bubble')?.querySelectorAll('.source-card').forEach((card, idx) => {
+            card.style.cursor = 'pointer';
+            card.addEventListener('click', () => {
+              parentContainer.closest('.bubble')?.querySelectorAll('.source-card').forEach(c => c.classList.remove('radar-active'));
+              card.classList.add('radar-active');
+              const bd = (debug.score_breakdowns || [])[idx];
+              if (!bd) return;
+              while (chart.data.datasets.length > 1) chart.data.datasets.pop();
+              chart.data.datasets.push({
+                label: bd.chunk_id.slice(0, 10) + '...',
+                data: [bd.vector_score, bd.graph_score, bd.entity_score, bd.metadata_score, bd.recency_score],
+                backgroundColor: 'rgba(37,99,235,0.12)',
+                borderColor: 'rgba(37,99,235,0.8)',
+                pointRadius: 4,
+              });
+              chart.update();
+              const final = bd.final_score.toFixed(4);
+              formulaDiv.textContent = `${iw.vector}×${bd.vector_score.toFixed(2)} + ${iw.graph}×${bd.graph_score.toFixed(2)} + ${iw.entity}×${bd.entity_score.toFixed(2)} + ${iw.metadata}×${bd.metadata_score.toFixed(2)} + ${iw.recency}×${bd.recency_score.toFixed(2)} = ${final}`;
+            });
+          });
+        }, 100);
+      }
+
+      function renderSourceComparison(container, debug) {
+        const vectorIds = debug.vector_only_ids || [];
+        const graphIds = debug.graph_entity_ids || [];
+        const multihopIds = debug.multihop_ids || [];
+        const vectorSet = new Set(vectorIds);
+        const graphOnly = [...graphIds, ...multihopIds].filter(id => !vectorSet.has(id));
+
+        container.innerHTML = `
+          <div class="comparison-grid">
+            <div class="comparison-col">
+              <h4>Vector</h4>
+              <span class="comparison-count">${vectorIds.length}</span>
+              <div class="comparison-chips">${vectorIds.slice(0, 5).map(id => `<span class="comparison-chip">${escapeHtml(id.slice(0, 8))}</span>`).join('')}</div>
+            </div>
+            <div class="comparison-col">
+              <h4>+ Graph Entity</h4>
+              <span class="comparison-count">${graphIds.length}</span>
+              <div class="comparison-chips">${graphIds.slice(0, 5).map(id => `<span class="comparison-chip">${escapeHtml(id.slice(0, 8))}</span>`).join('')}</div>
+            </div>
+            <div class="comparison-col">
+              <h4>+ Multihop</h4>
+              <span class="comparison-count">${multihopIds.length}</span>
+              <div class="comparison-chips">${multihopIds.slice(0, 5).map(id => `<span class="comparison-chip">${escapeHtml(id.slice(0, 8))}</span>`).join('')}</div>
+            </div>
+            <div class="comparison-discovery">Graph-Only 발견: ${graphOnly.length}개 (벡터 검색으로 못 찾은 청크)</div>
+          </div>
+        `;
+      }
+
+      function renderGraphViewer(container, debug) {
+        if (!debug.subgraph_nodes || !debug.subgraph_nodes.length || typeof d3 === 'undefined') {
+          container.textContent = 'No graph data';
+          return;
+        }
+        const width = container.clientWidth || 400;
+        const height = 350;
+
+        // Legend
+        const legend = document.createElement('div');
+        legend.className = 'graph-legend';
+        Object.entries(NODE_COLORS).forEach(([type, color]) => {
+          legend.innerHTML += `<span class="graph-legend-item"><span class="graph-legend-dot" style="background:${color}"></span>${type}</span>`;
+        });
+        container.appendChild(legend);
+
+        const svg = d3.select(container).append('svg').attr('width', width).attr('height', height);
+        const g = svg.append('g');
+        svg.call(d3.zoom().scaleExtent([0.3, 5]).on('zoom', (e) => g.attr('transform', e.transform)));
+
+        const tooltip = document.createElement('div');
+        tooltip.className = 'd3-tooltip';
+        tooltip.style.display = 'none';
+        container.style.position = 'relative';
+        container.appendChild(tooltip);
+
+        const nodes = debug.subgraph_nodes.map(n => ({...n}));
+        const edges = debug.subgraph_edges.map(e => ({...e}));
+        const queryEntities = new Set(debug.query_entities || []);
+        const seedSet = new Set(debug.seed_chunk_ids || []);
+        const graphSeedSet = new Set(debug.graph_seeded_chunk_ids || []);
+        const expandedSet = new Set(debug.expanded_chunk_ids || []);
+        const mentionCounts = debug.entity_mention_counts || {};
+
+        const simulation = d3.forceSimulation(nodes)
+          .force('link', d3.forceLink(edges).id(d => d.id).distance(70))
+          .force('charge', d3.forceManyBody().strength(-180))
+          .force('center', d3.forceCenter(width / 2, height / 2))
+          .force('collide', d3.forceCollide(20));
+
+        const link = g.selectAll('line').data(edges).join('line')
+          .attr('stroke', 'var(--border)').attr('stroke-width', 1).attr('stroke-opacity', 0.6);
+
+        const node = g.selectAll('circle').data(nodes).join('circle')
+          .attr('r', d => {
+            if (d.type === 'Chunk') return 6;
+            const count = mentionCounts[d.label] || 1;
+            return Math.min(20, Math.max(8, Math.log2(count + 1) * 5));
+          })
+          .attr('fill', d => NODE_COLORS[d.type] || '#6B7280')
+          .attr('stroke', d => {
+            if (queryEntities.has(d.id) || queryEntities.has(d.label)) return '#F59E0B';
+            if (seedSet.has(d.id)) return '#2563EB';
+            if (graphSeedSet.has(d.id)) return '#10B981';
+            if (expandedSet.has(d.id)) return '#8B5CF6';
+            return 'transparent';
+          })
+          .attr('stroke-width', d => {
+            if (queryEntities.has(d.id) || queryEntities.has(d.label)) return 3;
+            if (seedSet.has(d.id) || graphSeedSet.has(d.id)) return 2.5;
+            if (expandedSet.has(d.id)) return 2;
+            return 0;
+          })
+          .attr('stroke-dasharray', d => expandedSet.has(d.id) ? '3,2' : 'none')
+          .on('mouseover', (event, d) => {
+            tooltip.style.display = 'block';
+            tooltip.textContent = `${d.label} (${d.type})`;
+          })
+          .on('mousemove', (event) => {
+            const rect = container.getBoundingClientRect();
+            tooltip.style.left = (event.clientX - rect.left + 10) + 'px';
+            tooltip.style.top = (event.clientY - rect.top - 20) + 'px';
+          })
+          .on('mouseout', () => { tooltip.style.display = 'none'; })
+          .call(d3.drag()
+            .on('start', (e, d) => { if (!e.active) simulation.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })
+            .on('drag', (e, d) => { d.fx = e.x; d.fy = e.y; })
+            .on('end', (e, d) => { if (!e.active) simulation.alphaTarget(0); d.fx = null; d.fy = null; })
+          );
+
+        const label = g.selectAll('text').data(nodes.filter(n => n.type !== 'Chunk')).join('text')
+          .text(d => d.label.length > 12 ? d.label.slice(0, 12) + '…' : d.label)
+          .attr('font-size', 9).attr('dx', 12).attr('dy', 3).attr('fill', 'var(--text-secondary)');
+
+        simulation.on('tick', () => {
+          link.attr('x1', d => d.source.x).attr('y1', d => d.source.y).attr('x2', d => d.target.x).attr('y2', d => d.target.y);
+          node.attr('cx', d => d.x).attr('cy', d => d.y);
+          label.attr('x', d => d.x).attr('y', d => d.y);
+        });
+      }
+
+      function renderEntityMap(container, debug) {
+        const coocEdges = debug.cooccurrence_edges || [];
+        const mentionCounts = debug.entity_mention_counts || {};
+        const clusters = debug.community_clusters || [];
+        if (!coocEdges.length && !Object.keys(mentionCounts).length) {
+          container.textContent = 'No entity data';
+          return;
+        }
+        if (typeof d3 === 'undefined') { container.textContent = 'D3 not loaded'; return; }
+
+        const width = container.clientWidth || 350;
+        const height = 300;
+
+        // Build entity nodes from mentions + co-occurrence
+        const entitySet = new Set();
+        Object.keys(mentionCounts).forEach(e => entitySet.add(e));
+        coocEdges.forEach(e => { entitySet.add(e.entity_a); entitySet.add(e.entity_b); });
+
+        // Community color map
+        const communityOf = {};
+        const communityColors = ['#F59E0B', '#3B82F6', '#10B981', '#8B5CF6', '#EC4899', '#EF4444', '#14B8A6', '#F97316'];
+        clusters.forEach((c, i) => {
+          (c.entities || []).forEach(e => { communityOf[e] = i; });
+        });
+
+        const nodes = [...entitySet].map(name => ({
+          id: name,
+          label: name,
+          count: mentionCounts[name] || 1,
+          community: communityOf[name] ?? -1,
+        }));
+        const edges = coocEdges.map(e => ({ source: e.entity_a, target: e.entity_b, weight: e.shared_chunk_count }));
+
+        const svg = d3.select(container).append('svg').attr('width', width).attr('height', height);
+        const g = svg.append('g');
+        svg.call(d3.zoom().scaleExtent([0.3, 5]).on('zoom', (e) => g.attr('transform', e.transform)));
+
+        const tooltip = document.createElement('div');
+        tooltip.className = 'd3-tooltip';
+        tooltip.style.display = 'none';
+        container.style.position = 'relative';
+        container.appendChild(tooltip);
+
+        const maxWeight = Math.max(1, ...edges.map(e => e.weight));
+
+        const simulation = d3.forceSimulation(nodes)
+          .force('link', d3.forceLink(edges).id(d => d.id).distance(60))
+          .force('charge', d3.forceManyBody().strength(-120))
+          .force('center', d3.forceCenter(width / 2, height / 2))
+          .force('collide', d3.forceCollide(18));
+
+        const link = g.selectAll('line').data(edges).join('line')
+          .attr('stroke', 'var(--border)')
+          .attr('stroke-width', d => Math.max(1, (d.weight / maxWeight) * 5))
+          .attr('stroke-opacity', 0.5);
+
+        const node = g.selectAll('circle').data(nodes).join('circle')
+          .attr('r', d => Math.min(18, Math.max(6, Math.log2(d.count + 1) * 4)))
+          .attr('fill', d => d.community >= 0 ? communityColors[d.community % communityColors.length] : '#6B7280')
+          .attr('stroke', '#fff').attr('stroke-width', 1)
+          .on('mouseover', (event, d) => {
+            tooltip.style.display = 'block';
+            tooltip.textContent = `${d.label} (${d.count}회 멘션)`;
+          })
+          .on('mousemove', (event) => {
+            const rect = container.getBoundingClientRect();
+            tooltip.style.left = (event.clientX - rect.left + 10) + 'px';
+            tooltip.style.top = (event.clientY - rect.top - 20) + 'px';
+          })
+          .on('mouseout', () => { tooltip.style.display = 'none'; })
+          .call(d3.drag()
+            .on('start', (e, d) => { if (!e.active) simulation.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })
+            .on('drag', (e, d) => { d.fx = e.x; d.fy = e.y; })
+            .on('end', (e, d) => { if (!e.active) simulation.alphaTarget(0); d.fx = null; d.fy = null; })
+          );
+
+        const label = g.selectAll('text').data(nodes).join('text')
+          .text(d => d.label.length > 8 ? d.label.slice(0, 8) + '…' : d.label)
+          .attr('font-size', 9).attr('dx', 10).attr('dy', 3).attr('fill', 'var(--text-secondary)');
+
+        simulation.on('tick', () => {
+          link.attr('x1', d => d.source.x).attr('y1', d => d.source.y).attr('x2', d => d.target.x).attr('y2', d => d.target.y);
+          node.attr('cx', d => d.x).attr('cy', d => d.y);
+          label.attr('x', d => d.x).attr('y', d => d.y);
+        });
       }
 
       function renderSourceCard(source, index) {
@@ -1379,6 +1884,12 @@
         });
         document.addEventListener('click', () => {
           dom.healthDropdown.classList.remove('open');
+        });
+
+        dom.debugToggle.addEventListener('click', () => {
+          state.debugMode = !state.debugMode;
+          dom.debugToggle.classList.toggle('active', state.debugMode);
+          dom.debugToggle.title = state.debugMode ? 'Debug ON' : 'Debug OFF';
         });
 
         dom.themeToggle.addEventListener('click', () => {

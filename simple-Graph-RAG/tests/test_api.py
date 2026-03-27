@@ -65,6 +65,7 @@ class FakeRetrievalService:
         access_scopes: list[str],
         request_user: str | None,
         top_k: int | None = None,
+        debug: bool = False,
     ) -> QueryResponse:
         self.calls.append(
             {

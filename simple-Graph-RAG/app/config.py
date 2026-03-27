@@ -47,6 +47,13 @@ class Settings(BaseSettings):
 
     graph_neighbor_hops: int = 1
     graph_next_window: int = 2
+    graph_entity_seed_enabled: bool = True
+    graph_entity_seed_limit: int = 20
+    graph_multihop_enabled: bool = True
+    graph_entity_expansion_limit: int = 20
+    graph_author_expansion_limit: int = 10
+    community_detection_enabled: bool = False
+    community_min_size: int = 3
     default_access_scopes: str = Field(default="public")
 
     model_config = SettingsConfigDict(

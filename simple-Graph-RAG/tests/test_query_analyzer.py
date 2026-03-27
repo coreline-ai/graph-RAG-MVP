@@ -17,7 +17,7 @@ def test_query_analyzer_extracts_date_channel_user_and_intent() -> None:
 
     assert result.intent == "summary"
     assert result.filters.channel == "general"
-    assert result.filters.user_name == "민수"
+    assert result.filters.user_names == ["민수"]
     assert result.filters.date_from == date(2024, 1, 15)
     assert result.filters.date_to == date(2024, 1, 15)
     assert result.filters.access_scopes == ["public", "team-a"]
@@ -50,8 +50,8 @@ def test_korean_name_requires_db_match() -> None:
         users=["김민수", "박지현"],
     )
 
-    # "진행된"은 users에 없으므로 user_name이 None
-    assert result.filters.user_name is None
+    # "진행된"은 users에 없으므로 user_names가 빈 리스트
+    assert result.filters.user_names == []
 
 
 def test_korean_name_matches_when_in_users() -> None:
@@ -65,7 +65,7 @@ def test_korean_name_matches_when_in_users() -> None:
         users=["이순신", "김유신"],
     )
 
-    assert result.filters.user_name == "이순신"
+    assert result.filters.user_names == ["이순신"]
 
 
 def test_december_month_range() -> None:
@@ -97,6 +97,35 @@ def test_invalid_date_does_not_crash() -> None:
     # 유효하지 않은 날짜이므로 필터가 설정되지 않아야 함
     assert result.filters.date_from is None
     assert result.filters.date_to is None
+
+
+def test_multi_user_extraction() -> None:
+    """복수 사용자가 쿼리에 언급되면 모두 추출된다."""
+    analyzer = QueryAnalyzer()
+
+    result = analyzer.analyze(
+        "김민수와 박지현이 서버배포 관계 뭐라고 했어?",
+        access_scopes=["public"],
+        channels=[],
+        users=["김민수", "박지현", "이순신"],
+    )
+
+    assert set(result.filters.user_names) == {"김민수", "박지현"}
+    assert result.intent == "relationship"
+
+
+def test_multi_user_korean_name_fallback() -> None:
+    """직접 매칭 안 되고 한국어 이름 패턴으로도 복수 사용자 추출."""
+    analyzer = QueryAnalyzer()
+
+    result = analyzer.analyze(
+        "이순신과 김유신의 대화 내용",
+        access_scopes=["public"],
+        channels=[],
+        users=["이순신", "김유신"],
+    )
+
+    assert set(result.filters.user_names) == {"이순신", "김유신"}
 
 
 def test_intent_detection_keywords() -> None:

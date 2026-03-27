@@ -75,19 +75,19 @@ class QueryAnalyzer:
 
         for user in sorted(users, key=len, reverse=True):
             if user and user in question:
-                filters.user_name = user
+                if user not in filters.user_names:
+                    filters.user_names.append(user)
                 clean_question = clean_question.replace(user, " ")
-                break
 
-        if not filters.user_name and users:
+        if not filters.user_names and users:
             for name_match in self.KOREAN_NAME_PATTERN.finditer(question):
                 candidate = name_match.group(1)
                 if candidate in self.KOREAN_NAME_BLACKLIST:
                     continue
                 if candidate in users:
-                    filters.user_name = candidate
+                    if candidate not in filters.user_names:
+                        filters.user_names.append(candidate)
                     clean_question = clean_question.replace(candidate, " ")
-                    break
 
         intent = self._detect_intent(question)
         entities = self._extract_entities(clean_question)

@@ -37,6 +37,8 @@ class Neo4jStore:
             "CREATE CONSTRAINT user_name_unique IF NOT EXISTS FOR (u:User) REQUIRE u.name IS UNIQUE",
             "CREATE CONSTRAINT channel_name_unique IF NOT EXISTS FOR (c:Channel) REQUIRE c.name IS UNIQUE",
             "CREATE CONSTRAINT date_value_unique IF NOT EXISTS FOR (d:Date) REQUIRE d.date IS UNIQUE",
+            "CREATE CONSTRAINT entity_name_unique IF NOT EXISTS FOR (e:Entity) REQUIRE e.name IS UNIQUE",
+            "CREATE CONSTRAINT community_id_unique IF NOT EXISTS FOR (c:Community) REQUIRE c.community_id IS UNIQUE",
         ]
         for statement in statements:
             await self._run_query(statement)
@@ -92,8 +94,9 @@ class Neo4jStore:
                 MERGE (dt:Date {date: row.date})
                 SET dt.date_int = row.date_int
                 MERGE (c)-[:ON_DATE]->(dt)
-                FOREACH (entity_name IN row.entities |
-                    MERGE (e:Entity {name: entity_name})
+                FOREACH (entity IN row.entities |
+                    MERGE (e:Entity {name: entity.name})
+                    SET e.type = entity.type
                     MERGE (c)-[:MENTIONS]->(e)
                 )
                 """,
@@ -159,6 +162,28 @@ class Neo4jStore:
             )
         return True
 
+    async def find_chunks_by_entities(
+        self,
+        entity_names: list[str],
+        *,
+        limit: int = 20,
+    ) -> list[str]:
+        """Return chunk_ids that MENTION any of the given entities, ranked by hit count."""
+        if not entity_names:
+            return []
+        rows = await self._run_query(
+            """
+            MATCH (e:Entity)<-[:MENTIONS]-(c:Chunk)
+            WHERE e.name IN $entity_names
+            RETURN DISTINCT c.chunk_id AS chunk_id, count(e) AS entity_hits
+            ORDER BY entity_hits DESC
+            LIMIT $limit
+            """,
+            entity_names=entity_names,
+            limit=limit,
+        )
+        return [row["chunk_id"] for row in rows]
+
     async def expand_from_seed_chunks(
         self,
         chunk_ids: list[str],
@@ -202,6 +227,166 @@ class Neo4jStore:
                 expanded_chunk_ids=expanded_ids,
             )
         return expansions
+
+    async def extract_subgraph(
+        self,
+        chunk_ids: list[str],
+    ) -> list[dict[str, str]]:
+        """Extract relationship triples for the given chunks."""
+        if not chunk_ids:
+            return []
+        rows = await self._run_query(
+            """
+            MATCH (c:Chunk)-[r]->(n)
+            WHERE c.chunk_id IN $chunk_ids
+              AND (n:Entity OR n:User OR n:Channel)
+            RETURN c.chunk_id AS source,
+                   type(r) AS relationship,
+                   labels(n)[0] AS target_type,
+                   n.name AS target_name
+            """,
+            chunk_ids=chunk_ids,
+        )
+        return [dict(row) for row in rows]
+
+    async def expand_via_entity_cooccurrence(
+        self,
+        chunk_ids: list[str],
+        *,
+        limit: int = 20,
+    ) -> list[dict[str, Any]]:
+        """Find neighbor chunks that share entities with seed chunks (2-hop: Chunk→Entity→Chunk)."""
+        if not chunk_ids:
+            return []
+        rows = await self._run_query(
+            """
+            MATCH (seed:Chunk)-[:MENTIONS]->(e:Entity)<-[:MENTIONS]-(neighbor:Chunk)
+            WHERE seed.chunk_id IN $chunk_ids
+              AND neighbor.chunk_id <> seed.chunk_id
+            RETURN seed.chunk_id AS seed_id,
+                   neighbor.chunk_id AS neighbor_id,
+                   collect(DISTINCT e.name) AS shared_entities,
+                   count(DISTINCT e) AS shared_count
+            ORDER BY shared_count DESC
+            LIMIT $limit
+            """,
+            chunk_ids=chunk_ids,
+            limit=limit,
+        )
+        return [dict(row) for row in rows]
+
+    async def expand_via_same_author(
+        self,
+        chunk_ids: list[str],
+        *,
+        limit: int = 10,
+    ) -> list[dict[str, Any]]:
+        """Find neighbor chunks by the same author (2-hop: Chunk→User→Chunk)."""
+        if not chunk_ids:
+            return []
+        rows = await self._run_query(
+            """
+            MATCH (seed:Chunk)-[:SENT_BY]->(u:User)<-[:SENT_BY]-(neighbor:Chunk)
+            WHERE seed.chunk_id IN $chunk_ids
+              AND neighbor.chunk_id <> seed.chunk_id
+            RETURN seed.chunk_id AS seed_id,
+                   neighbor.chunk_id AS neighbor_id,
+                   u.name AS author
+            ORDER BY neighbor.date_int DESC
+            LIMIT $limit
+            """,
+            chunk_ids=chunk_ids,
+            limit=limit,
+        )
+        return [dict(row) for row in rows]
+
+    async def upsert_communities(
+        self,
+        communities: dict[int, dict[str, Any]],
+    ) -> None:
+        """Create Community nodes and link entities to them.
+
+        communities: {community_id: {"entities": [str], "summary": str}}
+        """
+        for cid, data in communities.items():
+            await self._run_query(
+                """
+                MERGE (comm:Community {community_id: $community_id})
+                SET comm.summary = $summary,
+                    comm.entity_count = $entity_count,
+                    comm.updated_at = datetime()
+                WITH comm
+                UNWIND $entity_names AS ename
+                MATCH (e:Entity {name: ename})
+                MERGE (e)-[:BELONGS_TO]->(comm)
+                """,
+                community_id=str(cid),
+                summary=data.get("summary", ""),
+                entity_count=len(data.get("entities", [])),
+                entity_names=data.get("entities", []),
+            )
+
+    async def find_communities_for_entities(
+        self,
+        entity_names: list[str],
+    ) -> list[dict[str, Any]]:
+        """Find communities that contain any of the given entities."""
+        if not entity_names:
+            return []
+        rows = await self._run_query(
+            """
+            MATCH (e:Entity)-[:BELONGS_TO]->(comm:Community)
+            WHERE e.name IN $entity_names
+            RETURN comm.community_id AS community_id,
+                   comm.summary AS summary,
+                   collect(DISTINCT e.name) AS matched_entities,
+                   comm.entity_count AS entity_count
+            ORDER BY size(collect(DISTINCT e.name)) DESC
+            """,
+            entity_names=entity_names,
+        )
+        return [dict(row) for row in rows]
+
+    async def get_entity_cooccurrence_network(
+        self,
+        entity_names: list[str],
+        *,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        """Return entity-entity co-occurrence edges for visualization."""
+        if not entity_names:
+            return []
+        rows = await self._run_query(
+            """
+            MATCH (e1:Entity)<-[:MENTIONS]-(c:Chunk)-[:MENTIONS]->(e2:Entity)
+            WHERE (e1.name IN $entity_names OR e2.name IN $entity_names)
+              AND id(e1) < id(e2)
+            RETURN e1.name AS entity_a, e2.name AS entity_b,
+                   count(DISTINCT c) AS shared_chunk_count
+            ORDER BY shared_chunk_count DESC
+            LIMIT $limit
+            """,
+            entity_names=entity_names,
+            limit=limit,
+        )
+        return [dict(row) for row in rows]
+
+    async def get_entity_mention_counts(
+        self,
+        entity_names: list[str],
+    ) -> dict[str, int]:
+        """Return mention frequency per entity."""
+        if not entity_names:
+            return {}
+        rows = await self._run_query(
+            """
+            MATCH (e:Entity)<-[:MENTIONS]-(c:Chunk)
+            WHERE e.name IN $entity_names
+            RETURN e.name AS entity, count(c) AS mention_count
+            """,
+            entity_names=entity_names,
+        )
+        return {row["entity"]: row["mention_count"] for row in rows}
 
     async def close(self) -> None:
         await self._driver.close()

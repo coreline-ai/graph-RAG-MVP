@@ -22,4 +22,5 @@ async def query_documents(
         access_scopes=access_scopes,
         request_user=request_user,
         top_k=payload.top_k,
+        debug=payload.debug,
     )

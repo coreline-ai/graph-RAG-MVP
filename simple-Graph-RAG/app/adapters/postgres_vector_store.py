@@ -287,9 +287,9 @@ class PostgresVectorStore:
         if filters.channel:
             clauses.append("channel = %s")
             params.append(filters.channel)
-        if filters.user_name:
-            clauses.append("user_name = %s")
-            params.append(filters.user_name)
+        if filters.user_names:
+            clauses.append("user_name = ANY(%s)")
+            params.append(filters.user_names)
         if filters.access_scopes:
             clauses.append("access_scopes && %s")
             params.append(filters.access_scopes)
