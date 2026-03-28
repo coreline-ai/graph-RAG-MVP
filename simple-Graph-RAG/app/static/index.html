@@ -404,6 +404,9 @@
         flex-direction: column;
         gap: var(--space-3);
       }
+      .message-assistant .bubble.bubble-debug {
+        max-width: min(96%, 1480px);
+      }
 
       .answer-text {
         line-height: var(--lh-relaxed);
@@ -785,6 +788,7 @@
 
         .message-user .bubble { max-width: 90%; }
         .message-assistant .bubble { max-width: 95%; }
+        .message-assistant .bubble.bubble-debug { max-width: 100%; }
 
         .welcome-card { padding: var(--space-5); }
       }
@@ -829,6 +833,7 @@
         border: 1px solid var(--border);
         border-radius: var(--radius-md);
         overflow: hidden;
+        min-width: 0;
       }
       .debug-panel-header {
         display: flex;
@@ -848,9 +853,16 @@
       .debug-panel-body {
         padding: var(--space-3);
         min-height: 60px;
+        min-width: 0;
       }
-      .debug-panel-body canvas { max-width: 100%; }
-      .debug-panel-body svg { max-width: 100%; }
+      .debug-panel-body canvas {
+        display: block;
+        max-width: 100%;
+      }
+      .debug-panel-body svg {
+        display: block;
+        max-width: 100%;
+      }
 
       .comparison-grid {
         display: grid;
@@ -1003,6 +1015,15 @@
         <div class="active-filters" id="activeFilters"></div>
 
         <div class="filter-section">
+          <span class="filter-label">코퍼스 타입</span>
+          <select class="filter-input" id="documentTypeFilter" aria-label="코퍼스 타입">
+            <option value="">전체</option>
+            <option value="chat">채팅 로그</option>
+            <option value="issue">이슈</option>
+          </select>
+        </div>
+
+        <div class="filter-section">
           <span class="filter-label">채널</span>
           <div class="channel-list" id="channelList"></div>
         </div>
@@ -1017,6 +1038,16 @@
           <span class="filter-label">기간</span>
           <input class="filter-input" id="dateFrom" type="date" aria-label="시작일" />
           <input class="filter-input" id="dateTo" type="date" aria-label="종료일" style="margin-top:4px" />
+        </div>
+
+        <div class="filter-section" id="issueFiltersSection">
+          <span class="filter-label">담당자</span>
+          <input class="filter-input" id="assigneeFilter" type="text" list="assigneeDatalist" placeholder="담당자 이름" autocomplete="off" />
+          <datalist id="assigneeDatalist"></datalist>
+          <span class="filter-label" style="margin-top:10px;">상태</span>
+          <select class="filter-input" id="statusFilter" aria-label="상태">
+            <option value="">전체 상태</option>
+          </select>
         </div>
 
         <div class="filter-actions">
@@ -1055,7 +1086,7 @@
 
       /* ── A: State ── */
       const state = {
-        filters: { channels: [], userName: '', dateFrom: '', dateTo: '' },
+        filters: { documentTypes: [], channels: [], userName: '', assignee: '', status: '', dateFrom: '', dateTo: '' },
         health: null,
         theme: localStorage.getItem('graph-rag-theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'),
         sidebarOpen: false,
@@ -1063,6 +1094,8 @@
         isLoading: false,
         knownChannels: [],
         knownUsers: [],
+        knownAssignees: [],
+        knownStatuses: [],
       };
 
       /* ── B: DOM References ── */
@@ -1080,9 +1113,14 @@
         sidebarClose: $('#sidebarClose'),
         filterToggle: $('#filterToggle'),
         filterBadge: $('#filterBadge'),
+        documentTypeFilter: $('#documentTypeFilter'),
         channelList: $('#channelList'),
         userFilter: $('#userFilter'),
         userDatalist: $('#userDatalist'),
+        assigneeFilter: $('#assigneeFilter'),
+        assigneeDatalist: $('#assigneeDatalist'),
+        statusFilter: $('#statusFilter'),
+        issueFiltersSection: $('#issueFiltersSection'),
         dateFrom: $('#dateFrom'),
         dateTo: $('#dateTo'),
         applyFilters: $('#applyFilters'),
@@ -1101,11 +1139,25 @@
       };
 
       /* ── C: API Layer ── */
-      async function apiQuery(question, topK = 5) {
+      async function apiQuery(question, filters, topK = 5) {
+        const payloadFilters = {
+          document_types: [...filters.documentTypes],
+          channels: [...filters.channels],
+          user_names: filters.userName ? [filters.userName] : [],
+          assignees: filters.assignee ? [filters.assignee] : [],
+          statuses: filters.status ? [filters.status] : [],
+          date_from: filters.dateFrom || null,
+          date_to: filters.dateTo || null,
+        };
         const res = await fetch('/query', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-Access-Scopes': 'public' },
-          body: JSON.stringify({ question, top_k: topK, debug: state.debugMode }),
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            question,
+            top_k: topK,
+            debug: state.debugMode,
+            filters: payloadFilters,
+          }),
         });
         if (!res.ok) throw new Error(`서버 오류 (${res.status})`);
         return res.json();
@@ -1117,12 +1169,66 @@
         return res.json();
       }
 
-      async function apiChannels() {
+      async function apiFacets(documentType = 'all') {
+        const res = await fetch(`/metadata/facets?document_type=${encodeURIComponent(documentType)}`);
+        if (!res.ok) throw new Error(`facet load failed (${res.status})`);
+        return res.json();
+      }
+
+      async function refreshFacets(documentType = 'all') {
         try {
-          const res = await fetch('/health');
-          if (!res.ok) return;
-          // We don't have a dedicated channels endpoint, so use known defaults
-        } catch { /* ignore */ }
+          const facets = await apiFacets(documentType);
+          state.knownChannels = facets.channels || [];
+          state.knownUsers = facets.users || [];
+          state.knownAssignees = facets.assignees || [];
+          state.knownStatuses = facets.statuses || [];
+
+          populateChannels(state.knownChannels);
+          populateUsers(state.knownUsers);
+          populateAssignees(state.knownAssignees);
+          populateStatuses(state.knownStatuses);
+
+          state.filters.channels = state.filters.channels.filter((channel) => state.knownChannels.includes(channel));
+          if (state.filters.userName && !state.knownUsers.includes(state.filters.userName)) {
+            state.filters.userName = '';
+          }
+
+          const isIssue = documentType === 'issue';
+          if (!isIssue) {
+            state.filters.assignee = '';
+            state.filters.status = '';
+          } else {
+            if (state.filters.assignee && !state.knownAssignees.includes(state.filters.assignee)) {
+              state.filters.assignee = '';
+            }
+            if (state.filters.status && !state.knownStatuses.includes(state.filters.status)) {
+              state.filters.status = '';
+            }
+          }
+
+          syncSidebarFromState();
+          renderActiveFilters();
+          updateFilterBadge();
+        } catch {
+          if (documentType === 'issue') {
+            state.knownChannels = ['이슈데이터_10000건'];
+            state.knownUsers = [];
+            state.knownAssignees = [];
+            state.knownStatuses = [];
+          } else {
+            state.knownChannels = ['백엔드개발', '프론트엔드', '인프라', '전체공지'];
+            state.knownUsers = ['김민수', '박지현', '이서준', '최유나', '한도윤', '정하늘'];
+            state.knownAssignees = [];
+            state.knownStatuses = [];
+          }
+          populateChannels(state.knownChannels);
+          populateUsers(state.knownUsers);
+          populateAssignees(state.knownAssignees);
+          populateStatuses(state.knownStatuses);
+          syncSidebarFromState();
+          renderActiveFilters();
+          updateFilterBadge();
+        }
       }
 
       /* ── D: Render Functions ── */
@@ -1168,8 +1274,11 @@
 
         let badges = '';
         const parts = [];
+        if (filters.documentTypes.length) parts.push(`코퍼스: ${filters.documentTypes.join(', ')}`);
         if (filters.channels.length) parts.push(`채널: ${filters.channels.join(', ')}`);
         if (filters.userName) parts.push(`작성자: ${filters.userName}`);
+        if (filters.assignee) parts.push(`담당자: ${filters.assignee}`);
+        if (filters.status) parts.push(`상태: ${filters.status}`);
         if (filters.dateFrom) parts.push(`시작: ${filters.dateFrom}`);
         if (filters.dateTo) parts.push(`종료: ${filters.dateTo}`);
         if (parts.length) {
@@ -1280,7 +1389,9 @@
         if (data.debug) {
           const debugContainer = document.createElement('div');
           debugContainer.className = 'debug-panels';
-          el.querySelector('.bubble').appendChild(debugContainer);
+          const bubble = el.querySelector('.bubble');
+          bubble.classList.add('bubble-debug');
+          bubble.appendChild(debugContainer);
           renderDebugPanels(data.debug, debugContainer, data.sources || []);
         }
 
@@ -1290,6 +1401,12 @@
 
       /* ── D2: Debug Visualization Renderers ── */
       const NODE_COLORS = { Entity: '#F59E0B', User: '#3B82F6', Channel: '#10B981', Chunk: '#6B7280', Community: '#8B5CF6', Date: '#EC4899' };
+
+      function getPanelInnerWidth(container, fallback = 400) {
+        const style = getComputedStyle(container);
+        const horizontalPadding = parseFloat(style.paddingLeft || '0') + parseFloat(style.paddingRight || '0');
+        return Math.max(280, Math.floor((container.clientWidth || fallback) - horizontalPadding));
+      }
 
       function renderDebugPanels(debug, container, sources) {
         // Row 1: Pipeline Waterfall
@@ -1452,7 +1569,7 @@
           container.textContent = 'No graph data';
           return;
         }
-        const width = container.clientWidth || 400;
+        const width = getPanelInnerWidth(container, 400);
         const height = 350;
 
         // Legend
@@ -1463,7 +1580,12 @@
         });
         container.appendChild(legend);
 
-        const svg = d3.select(container).append('svg').attr('width', width).attr('height', height);
+        const svg = d3.select(container).append('svg')
+          .attr('width', width)
+          .attr('height', height)
+          .attr('viewBox', `0 0 ${width} ${height}`)
+          .style('width', '100%')
+          .style('height', `${height}px`);
         const g = svg.append('g');
         svg.call(d3.zoom().scaleExtent([0.3, 5]).on('zoom', (e) => g.attr('transform', e.transform)));
 
@@ -1548,7 +1670,7 @@
         }
         if (typeof d3 === 'undefined') { container.textContent = 'D3 not loaded'; return; }
 
-        const width = container.clientWidth || 350;
+        const width = getPanelInnerWidth(container, 350);
         const height = 300;
 
         // Build entity nodes from mentions + co-occurrence
@@ -1631,6 +1753,13 @@
         const channel = source.channel || '-';
         const user = source.user_name || '-';
         const date = source.message_date || '-';
+        const badge = source.source_badge || 'chat';
+        const issueMeta = [
+          source.issue_title ? `이슈: ${source.issue_title}` : '',
+          source.assignee ? `담당: ${source.assignee}` : '',
+          source.status ? `상태: ${source.status}` : '',
+          source.flow_name ? `흐름: ${source.flow_name}` : '',
+        ].filter(Boolean).join(' · ');
 
         // Clean content display
         let content = source.content || '';
@@ -1656,13 +1785,14 @@
         return `
           <div class="source-card">
             <div class="source-header">
-              <span class="source-channel">${escapeHtml(channel)}</span>
+              <span class="source-channel">${escapeHtml(channel)} <span class="graph-chip">${escapeHtml(badge)}</span></span>
               <span class="source-meta">${escapeHtml(user)} · ${escapeHtml(String(date))}</span>
               <span class="source-score">
                 <span class="score-bar-track"><span class="score-bar-fill" style="width:${barWidth}%"></span></span>
                 ${score}%
               </span>
             </div>
+            ${issueMeta ? `<div class="source-meta" style="margin-bottom:8px;">${escapeHtml(issueMeta)}</div>` : ''}
             <div class="source-content">${escapeHtml(content)}</div>
             ${neighborsHtml}
           </div>
@@ -1687,20 +1817,13 @@
       }
 
       /* ── E: Filter Logic ── */
-      function buildFilterSuffix(filters) {
-        const parts = [];
-        if (filters.channels.length) parts.push(`채널: ${filters.channels.join(', ')}`);
-        if (filters.userName) parts.push(`작성자: ${filters.userName}`);
-        if (filters.dateFrom) parts.push(`시작일: ${filters.dateFrom}`);
-        if (filters.dateTo) parts.push(`종료일: ${filters.dateTo}`);
-        if (!parts.length) return '';
-        return ' [필터 조건 - ' + parts.join('; ') + ']';
-      }
-
       function getActiveFilterCount() {
         let count = 0;
+        if (state.filters.documentTypes.length) count++;
         if (state.filters.channels.length) count++;
         if (state.filters.userName) count++;
+        if (state.filters.assignee) count++;
+        if (state.filters.status) count++;
         if (state.filters.dateFrom || state.filters.dateTo) count++;
         return count;
       }
@@ -1713,11 +1836,20 @@
 
       function renderActiveFilters() {
         const chips = [];
+        state.filters.documentTypes.forEach(type => {
+          chips.push({ label: `코퍼스: ${type}`, clear: () => { state.filters.documentTypes = []; dom.documentTypeFilter.value = ''; toggleIssueFilterVisibility(); } });
+        });
         state.filters.channels.forEach(ch => {
           chips.push({ label: `채널: ${ch}`, clear: () => { state.filters.channels = state.filters.channels.filter(c => c !== ch); } });
         });
         if (state.filters.userName) {
           chips.push({ label: `작성자: ${state.filters.userName}`, clear: () => { state.filters.userName = ''; dom.userFilter.value = ''; } });
+        }
+        if (state.filters.assignee) {
+          chips.push({ label: `담당자: ${state.filters.assignee}`, clear: () => { state.filters.assignee = ''; dom.assigneeFilter.value = ''; } });
+        }
+        if (state.filters.status) {
+          chips.push({ label: `상태: ${state.filters.status}`, clear: () => { state.filters.status = ''; dom.statusFilter.value = ''; } });
         }
         if (state.filters.dateFrom) {
           chips.push({ label: `시작: ${state.filters.dateFrom}`, clear: () => { state.filters.dateFrom = ''; dom.dateFrom.value = ''; } });
@@ -1741,23 +1873,31 @@
       }
 
       function syncSidebarFromState() {
+        dom.documentTypeFilter.value = state.filters.documentTypes[0] || '';
         dom.channelList.querySelectorAll('input[type="checkbox"]').forEach(cb => {
           cb.checked = state.filters.channels.includes(cb.value);
         });
         dom.userFilter.value = state.filters.userName;
+        dom.assigneeFilter.value = state.filters.assignee;
+        dom.statusFilter.value = state.filters.status;
         dom.dateFrom.value = state.filters.dateFrom;
         dom.dateTo.value = state.filters.dateTo;
+        toggleIssueFilterVisibility();
       }
 
       function readFiltersFromSidebar() {
+        state.filters.documentTypes = dom.documentTypeFilter.value ? [dom.documentTypeFilter.value] : [];
         const channels = [];
         dom.channelList.querySelectorAll('input[type="checkbox"]:checked').forEach(cb => {
           channels.push(cb.value);
         });
         state.filters.channels = channels;
         state.filters.userName = dom.userFilter.value.trim();
+        state.filters.assignee = dom.assigneeFilter.value.trim();
+        state.filters.status = dom.statusFilter.value;
         state.filters.dateFrom = dom.dateFrom.value;
         state.filters.dateTo = dom.dateTo.value;
+        toggleIssueFilterVisibility();
       }
 
       function populateChannels(channels) {
@@ -1775,6 +1915,24 @@
         ).join('');
       }
 
+      function populateAssignees(assignees) {
+        dom.assigneeDatalist.innerHTML = assignees.map(name =>
+          `<option value="${escapeHtml(name)}">`
+        ).join('');
+      }
+
+      function populateStatuses(statuses) {
+        dom.statusFilter.innerHTML = [
+          '<option value="">전체 상태</option>',
+          ...statuses.map(status => `<option value="${escapeHtml(status)}">${escapeHtml(status)}</option>`),
+        ].join('');
+      }
+
+      function toggleIssueFilterVisibility() {
+        const isIssue = state.filters.documentTypes.includes('issue');
+        dom.issueFiltersSection.style.display = isIssue ? 'block' : 'none';
+      }
+
       /* ── F: Event Handlers ── */
       function updateSendBtn() {
         dom.sendBtn.disabled = !dom.questionInput.value.trim() || state.isLoading;
@@ -1789,7 +1947,6 @@
         updateSendBtn();
 
         const filters = { ...state.filters, channels: [...state.filters.channels] };
-        const effectiveQuestion = question + buildFilterSuffix(filters);
 
         dom.questionInput.value = '';
         updateSendBtn();
@@ -1798,7 +1955,7 @@
         renderLoadingBubble();
 
         try {
-          const data = await apiQuery(effectiveQuestion);
+          const data = await apiQuery(question, filters);
           removeLoadingBubble();
           renderAssistantBubble(data);
         } catch (err) {
@@ -1850,11 +2007,8 @@
         // Render welcome
         renderWelcome();
 
-        // Known channels & users (hardcoded from sample data + can be extended)
-        state.knownChannels = ['백엔드개발', '프론트엔드', '인프라', '전체공지'];
-        state.knownUsers = ['김민수', '박지현', '이서준', '최유나', '한도윤', '정하늘'];
-        populateChannels(state.knownChannels);
-        populateUsers(state.knownUsers);
+        refreshFacets();
+        toggleIssueFilterVisibility();
 
         // Events
         dom.inputBar.addEventListener('submit', handleSubmit);
@@ -1872,10 +2026,20 @@
         });
 
         dom.resetFilters.addEventListener('click', () => {
-          state.filters = { channels: [], userName: '', dateFrom: '', dateTo: '' };
+          state.filters = { documentTypes: [], channels: [], userName: '', assignee: '', status: '', dateFrom: '', dateTo: '' };
           syncSidebarFromState();
           renderActiveFilters();
           updateFilterBadge();
+        });
+
+        dom.documentTypeFilter.addEventListener('change', async () => {
+          state.filters.documentTypes = dom.documentTypeFilter.value ? [dom.documentTypeFilter.value] : [];
+          if (!state.filters.documentTypes.includes('issue')) {
+            state.filters.assignee = '';
+            state.filters.status = '';
+          }
+          toggleIssueFilterVisibility();
+          await refreshFacets(dom.documentTypeFilter.value || 'all');
         });
 
         dom.healthBtn.addEventListener('click', (e) => {

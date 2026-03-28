@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.api.documents import router as documents_router
 from app.api.health import router as health_router
+from app.api.metadata import router as metadata_router
 from app.api.query import router as query_router
 from app.config import Settings, get_settings
 from app.container import ServiceContainer
@@ -51,6 +52,7 @@ def create_app(
 
     app.include_router(health_router)
     app.include_router(documents_router)
+    app.include_router(metadata_router)
     app.include_router(query_router)
     return app
 

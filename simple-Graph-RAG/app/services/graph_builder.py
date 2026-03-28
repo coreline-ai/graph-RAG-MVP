@@ -42,6 +42,7 @@ class GraphBuilder:
                 {
                     "chunk_id": chunk.chunk_id,
                     "document_id": chunk.document_id,
+                    "document_type": chunk.document_type,
                     "text": chunk.chunk_text,
                     "channel": chunk.channel,
                     "user_name": chunk.user_name,
@@ -51,6 +52,18 @@ class GraphBuilder:
                     "seq": chunk.seq,
                     "token_count": chunk.token_count,
                     "access_scopes": chunk.access_scopes,
+                    "title": chunk.metadata.get("title") or chunk.metadata.get("issue_title"),
+                    "issue_title": chunk.metadata.get("issue_title"),
+                    "status": chunk.metadata.get("status"),
+                    "status_raw": chunk.metadata.get("status_raw"),
+                    "assignee": chunk.metadata.get("assignee"),
+                    "chunk_kind": chunk.metadata.get("chunk_kind"),
+                    "flow_name": chunk.metadata.get("flow_name"),
+                    "created_at_iso": chunk.metadata.get("created_at_iso"),
+                    "created_at_int": chunk.metadata.get("created_at_int"),
+                    "start_at_int": chunk.metadata.get("start_at_int"),
+                    "due_at_int": chunk.metadata.get("due_at_int"),
+                    "completed_at_int": chunk.metadata.get("completed_at_int"),
                     "entities": typed_entities,
                 }
             )
@@ -97,4 +110,3 @@ class GraphBuilder:
         if len(korean_chars) == 3 and len(token) <= 4:
             return "person"
         return "topic"
-

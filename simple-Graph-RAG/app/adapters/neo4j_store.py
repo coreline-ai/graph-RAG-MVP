@@ -38,6 +38,8 @@ class Neo4jStore:
             "CREATE CONSTRAINT channel_name_unique IF NOT EXISTS FOR (c:Channel) REQUIRE c.name IS UNIQUE",
             "CREATE CONSTRAINT date_value_unique IF NOT EXISTS FOR (d:Date) REQUIRE d.date IS UNIQUE",
             "CREATE CONSTRAINT entity_name_unique IF NOT EXISTS FOR (e:Entity) REQUIRE e.name IS UNIQUE",
+            "CREATE CONSTRAINT issue_name_unique IF NOT EXISTS FOR (i:Issue) REQUIRE i.name IS UNIQUE",
+            "CREATE CONSTRAINT status_name_unique IF NOT EXISTS FOR (s:Status) REQUIRE s.name IS UNIQUE",
             "CREATE CONSTRAINT community_id_unique IF NOT EXISTS FOR (c:Community) REQUIRE c.community_id IS UNIQUE",
         ]
         for statement in statements:
@@ -56,6 +58,7 @@ class Neo4jStore:
             MERGE (d:Document {document_id: $document_id})
             SET d.filename = $filename,
                 d.source = $source,
+                d.document_type = $document_type,
                 d.access_scopes = $access_scopes,
                 d.total_messages = $total_messages,
                 d.total_chunks = $total_chunks,
@@ -64,6 +67,7 @@ class Neo4jStore:
             document_id=document.document_id,
             filename=document.filename,
             source=document.source,
+            document_type=document.document_type,
             access_scopes=document.access_scopes,
             total_messages=document.total_messages,
             total_chunks=document.total_chunks,
@@ -76,14 +80,24 @@ class Neo4jStore:
                 UNWIND $rows AS row
                 MERGE (c:Chunk {chunk_id: row.chunk_id})
                 SET c.document_id = row.document_id,
+                    c.document_type = row.document_type,
                     c.text = row.text,
+                    c.title = row.title,
                     c.channel = row.channel,
                     c.user_name = row.user_name,
                     c.date = row.date,
+                    c.date_int = row.date_int,
                     c.time = row.time,
                     c.seq = row.seq,
                     c.token_count = row.token_count,
-                    c.access_scopes = row.access_scopes
+                    c.access_scopes = row.access_scopes,
+                    c.status = row.status,
+                    c.status_raw = row.status_raw,
+                    c.created_at_iso = row.created_at_iso,
+                    c.created_at_int = row.created_at_int,
+                    c.start_at_int = row.start_at_int,
+                    c.due_at_int = row.due_at_int,
+                    c.completed_at_int = row.completed_at_int
                 WITH c, row
                 MATCH (d:Document {document_id: row.document_id})
                 MERGE (c)-[:PART_OF]->(d)
@@ -94,6 +108,18 @@ class Neo4jStore:
                 MERGE (dt:Date {date: row.date})
                 SET dt.date_int = row.date_int
                 MERGE (c)-[:ON_DATE]->(dt)
+                FOREACH (_ IN CASE WHEN row.issue_title IS NULL OR row.issue_title = '' THEN [] ELSE [1] END |
+                    MERGE (i:Issue {name: row.issue_title})
+                    MERGE (c)-[:ABOUT_ISSUE]->(i)
+                )
+                FOREACH (_ IN CASE WHEN row.status IS NULL OR row.status = '' THEN [] ELSE [1] END |
+                    MERGE (s:Status {name: row.status})
+                    MERGE (c)-[:HAS_STATUS]->(s)
+                )
+                FOREACH (_ IN CASE WHEN row.assignee IS NULL OR row.assignee = '' THEN [] ELSE [1] END |
+                    MERGE (assignee:User {name: row.assignee})
+                    MERGE (c)-[:ASSIGNED_TO]->(assignee)
+                )
                 FOREACH (entity IN row.entities |
                     MERGE (e:Entity {name: entity.name})
                     SET e.type = entity.type
@@ -125,7 +151,7 @@ class Neo4jStore:
             MATCH (d:Document {document_id: $document_id})
             OPTIONAL MATCH (d)<-[:PART_OF]-(c:Chunk)
             OPTIONAL MATCH (c)--(n)
-            WHERE n:User OR n:Channel OR n:Date OR n:Entity OR n:Topic
+            WHERE n:User OR n:Channel OR n:Date OR n:Entity OR n:Topic OR n:Issue OR n:Status
             RETURN count(DISTINCT d) AS doc_count, collect(DISTINCT id(n)) AS neighbor_ids
             """,
             document_id=document_id,
@@ -154,7 +180,7 @@ class Neo4jStore:
                 UNWIND $neighbor_ids AS neighbor_id
                 MATCH (n)
                 WHERE id(n) = neighbor_id
-                  AND (n:User OR n:Channel OR n:Date OR n:Entity OR n:Topic)
+                  AND (n:User OR n:Channel OR n:Date OR n:Entity OR n:Topic OR n:Issue OR n:Status)
                   AND NOT (n)--()
                 DELETE n
                 """,
@@ -239,7 +265,7 @@ class Neo4jStore:
             """
             MATCH (c:Chunk)-[r]->(n)
             WHERE c.chunk_id IN $chunk_ids
-              AND (n:Entity OR n:User OR n:Channel)
+              AND (n:Entity OR n:User OR n:Channel OR n:Issue OR n:Status)
             RETURN c.chunk_id AS source,
                    type(r) AS relationship,
                    labels(n)[0] AS target_type,
@@ -253,14 +279,17 @@ class Neo4jStore:
         self,
         chunk_ids: list[str],
         *,
+        entity_names: list[str],
         limit: int = 20,
     ) -> list[dict[str, Any]]:
         """Find neighbor chunks that share entities with seed chunks (2-hop: Chunk→Entity→Chunk)."""
-        if not chunk_ids:
+        if not chunk_ids or not entity_names:
             return []
         rows = await self._run_query(
             """
-            MATCH (seed:Chunk)-[:MENTIONS]->(e:Entity)<-[:MENTIONS]-(neighbor:Chunk)
+            MATCH (e:Entity)
+            WHERE e.name IN $entity_names
+            MATCH (seed:Chunk)-[:MENTIONS]->(e)<-[:MENTIONS]-(neighbor:Chunk)
             WHERE seed.chunk_id IN $chunk_ids
               AND neighbor.chunk_id <> seed.chunk_id
             RETURN seed.chunk_id AS seed_id,
@@ -271,6 +300,7 @@ class Neo4jStore:
             LIMIT $limit
             """,
             chunk_ids=chunk_ids,
+            entity_names=entity_names,
             limit=limit,
         )
         return [dict(row) for row in rows]

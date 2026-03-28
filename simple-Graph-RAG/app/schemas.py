@@ -3,7 +3,10 @@ from __future__ import annotations
 from datetime import date, datetime, time, timezone
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+
+DocumentType = Literal["chat", "issue"]
 
 
 class DocumentCreateRequest(BaseModel):
@@ -11,15 +14,18 @@ class DocumentCreateRequest(BaseModel):
     content: str
     default_access_scopes: list[str] = Field(default_factory=lambda: ["public"])
     source: str = "manual"
+    document_type: DocumentType = "chat"
 
 
 class DocumentMetadata(BaseModel):
     document_id: str
     filename: str
     source: str = "manual"
+    document_type: DocumentType = "chat"
     access_scopes: list[str] = Field(default_factory=list)
     total_messages: int = 0
     total_chunks: int = 0
+    ingest_summary: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
@@ -34,6 +40,7 @@ class DocumentDeleteResponse(BaseModel):
 
 class UploadFileResponse(BaseModel):
     document: DocumentMetadata
+    ingest_summary: dict[str, Any] = Field(default_factory=dict)
 
 
 class ParsedMessage(BaseModel):
@@ -50,6 +57,7 @@ class ParsedMessage(BaseModel):
 class ChunkRecord(BaseModel):
     chunk_id: str
     document_id: str
+    document_type: DocumentType = "chat"
     channel: str
     user_name: str
     message_date: date
@@ -64,22 +72,75 @@ class ChunkRecord(BaseModel):
 
 class QueryRequest(BaseModel):
     question: str
-    top_k: int = 10
+    top_k: int = Field(default=10, ge=1, le=50)
     debug: bool = False
+    filters: "QueryRequestFilters | None" = None
+
+
+class QueryRequestFilters(BaseModel):
+    date_from: date | None = None
+    date_to: date | None = None
+    document_types: list[DocumentType] = Field(default_factory=list)
+    channels: list[str] = Field(default_factory=list)
+    user_names: list[str] = Field(default_factory=list)
+    assignees: list[str] = Field(default_factory=list)
+    statuses: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def normalize(self) -> "QueryRequestFilters":
+        self.document_types = list(dict.fromkeys(self.document_types))
+        self.channels = _dedupe_strings(self.channels)
+        self.user_names = _dedupe_strings(self.user_names)
+        self.assignees = _dedupe_strings(self.assignees)
+        self.statuses = _dedupe_strings(self.statuses)
+        if self.date_from and self.date_to and self.date_from > self.date_to:
+            raise ValueError("date_from must be on or before date_to")
+        return self
+
+
+QueryRequest.model_rebuild()
 
 
 class QueryFilters(BaseModel):
     date_from: date | None = None
     date_to: date | None = None
     channel: str | None = None
+    document_types: list[DocumentType] = Field(default_factory=list)
+    channels: list[str] = Field(default_factory=list)
     user_names: list[str] = Field(default_factory=list)
+    assignees: list[str] = Field(default_factory=list)
+    statuses: list[str] = Field(default_factory=list)
     access_scopes: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def normalize(self) -> "QueryFilters":
+        self.document_types = list(dict.fromkeys(self.document_types))
+        normalized_channels = _dedupe_strings([
+            *(self.channels or []),
+            self.channel or "",
+        ])
+        self.channels = normalized_channels
+        self.channel = normalized_channels[0] if normalized_channels else None
+        self.user_names = _dedupe_strings(self.user_names)
+        self.assignees = _dedupe_strings(self.assignees)
+        self.statuses = _dedupe_strings(self.statuses)
+        return self
+
+    @property
+    def all_channels(self) -> list[str]:
+        return list(self.channels)
+
+    @property
+    def all_document_types(self) -> list[DocumentType]:
+        return list(self.document_types)
 
 
 class QueryAnalysis(BaseModel):
     original_question: str
     clean_question: str
-    intent: Literal["search", "summary", "timeline", "aggregate", "relationship"] = "search"
+    search_text: str | None = None
+    intent: Literal["search", "summary", "timeline", "aggregate", "relationship", "list"] = "search"
+    detected_document_type: DocumentType | None = None
     filters: QueryFilters = Field(default_factory=QueryFilters)
     entities: list[str] = Field(default_factory=list)
 
@@ -95,6 +156,7 @@ class RetrievedChunk(BaseModel):
 
     chunk_id: str
     document_id: str
+    document_type: DocumentType = "chat"
     channel: str
     user_name: str
     message_date: date
@@ -129,10 +191,16 @@ class QuerySource(BaseModel):
     chunk_id: str
     score: float
     content: str
+    document_type: DocumentType = "chat"
+    source_badge: str = "chat"
     graph_neighbors: list[str] = Field(default_factory=list)
     channel: str | None = None
     user_name: str | None = None
     message_date: date | None = None
+    issue_title: str | None = None
+    assignee: str | None = None
+    status: str | None = None
+    flow_name: str | None = None
 
 
 class PipelineTiming(BaseModel):
@@ -205,6 +273,11 @@ class DebugData(BaseModel):
     multihop_ids: list[str] = Field(default_factory=list)
     detected_intent: str = "search"
     clean_question: str = ""
+    route: str = "standard"
+    strategy: str = "standard_query"
+    count_kind: Literal["overall", "subtype", "none"] = "none"
+    chat_match_count: int = 0
+    issue_match_count: int = 0
 
 
 class QueryResponse(BaseModel):
@@ -218,10 +291,51 @@ class QueryResponse(BaseModel):
 
 class HealthResponse(BaseModel):
     status: Literal["ok", "degraded"]
+    ready: bool = True
     neo4j: str
     postgres: str
     embedding: str
     codex_proxy: str
+    startup_errors: dict[str, str] = Field(default_factory=dict)
+
+
+class IssueRow(BaseModel):
+    sheet_name: str
+    row_index: int
+    title: str
+    registered_date: date
+    start_date: date | None = None
+    due_date: date | None = None
+    completed_date: date | None = None
+    check_text: str = ""
+    work_text: str = ""
+    instruction_text: str = ""
+    assignee: str = "unassigned"
+    status: str = ""
+    status_raw: str = ""
+    analysis: str = ""
+
+
+class BehaviorFlowChunk(BaseModel):
+    flow_name: str
+    labels: list[str] = Field(default_factory=list)
+    text: str
+
+
+class WorkbookParseResult(BaseModel):
+    rows: list[IssueRow] = Field(default_factory=list)
+    total_rows: int = 0
+    skipped_rows: int = 0
+    warnings: list[str] = Field(default_factory=list)
+
+
+class MetadataFacetsResponse(BaseModel):
+    document_types: list[str] = Field(default_factory=list)
+    channels: list[str] = Field(default_factory=list)
+    users: list[str] = Field(default_factory=list)
+    assignees: list[str] = Field(default_factory=list)
+    statuses: list[str] = Field(default_factory=list)
+    latest_event_date: date | None = None
 
 
 class CodexGenerateRequest(BaseModel):
@@ -237,3 +351,11 @@ class CodexGenerateResponse(BaseModel):
     finish_reason: str | None = None
     raw: dict[str, Any] = Field(default_factory=dict)
 
+
+def _dedupe_strings(values: list[str]) -> list[str]:
+    deduped: list[str] = []
+    for value in values:
+        cleaned = value.strip()
+        if cleaned and cleaned not in deduped:
+            deduped.append(cleaned)
+    return deduped

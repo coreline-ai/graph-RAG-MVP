@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 
 from app.config import Settings
 from app.main import create_app
-from app.schemas import DocumentMetadata, QueryResponse, QuerySource
+from app.schemas import DocumentMetadata, MetadataFacetsResponse, QueryRequestFilters, QueryResponse, QuerySource
 
 
 class FakeHealthComponent:
@@ -26,19 +26,27 @@ class FakeIngestService:
         self,
         *,
         filename: str,
-        content: str,
+        content: str | None = None,
+        file_bytes: bytes | None = None,
         default_access_scopes: list[str] | None = None,
         source: str = "manual",
+        document_type: str = "chat",
+        replace_filename: bool = False,
+        byte_limit: int | None = None,
+        row_limit: int | None = None,
     ) -> DocumentMetadata:
-        if "INVALID" in content:
+        raw_content = content or (file_bytes.decode("utf-8") if file_bytes else "")
+        if "INVALID" in raw_content:
             raise ValueError("Invalid chat log format at line 1: INVALID")
         document = DocumentMetadata(
             document_id=f"doc-{len(self.documents) + 1}",
             filename=filename,
             source=source,
+            document_type=document_type,
             access_scopes=default_access_scopes or ["public"],
-            total_messages=max(content.count("\n") + 1, 1),
+            total_messages=max(raw_content.count("\n") + 1, 1),
             total_chunks=1,
+            ingest_summary={},
             created_at=datetime.now(timezone.utc),
         )
         self.documents[document.document_id] = document
@@ -66,6 +74,7 @@ class FakeRetrievalService:
         request_user: str | None,
         top_k: int | None = None,
         debug: bool = False,
+        request_filters: QueryRequestFilters | None = None,
     ) -> QueryResponse:
         self.calls.append(
             {
@@ -73,6 +82,7 @@ class FakeRetrievalService:
                 "access_scopes": access_scopes,
                 "request_user": request_user,
                 "top_k": top_k,
+                "request_filters": request_filters.model_dump(mode="json") if request_filters else None,
             }
         )
         return QueryResponse(
@@ -90,6 +100,15 @@ class FakeRetrievalService:
             ],
         )
 
+    async def get_facets(self, document_type: str = "all") -> MetadataFacetsResponse:
+        return MetadataFacetsResponse(
+            document_types=["chat", "issue"],
+            channels=["general", "dev"],
+            users=["민수", "지현"],
+            assignees=["Sujin"],
+            statuses=["완료", "진행"],
+        )
+
 
 @dataclass
 class FakeContainer:
@@ -103,6 +122,7 @@ class FakeContainer:
     )
     codex_proxy: FakeHealthComponent = field(default_factory=lambda: FakeHealthComponent("ok"))
     startup_errors: dict[str, str] = field(default_factory=dict)
+    ready: bool = True
     started: bool = False
     stopped: bool = False
 
@@ -122,6 +142,7 @@ def test_health_endpoint_reports_degraded_when_component_errors() -> None:
 
     assert response.status_code == 200
     assert response.json()["status"] == "degraded"
+    assert response.json()["ready"] is True
     assert response.json()["codex_proxy"] == "error:proxy down"
     assert container.started is True
     assert container.stopped is True
@@ -156,15 +177,29 @@ def test_document_lifecycle_endpoints() -> None:
 
 
 def test_query_endpoint_forwards_scope_and_user_headers() -> None:
-    container = FakeContainer()
+    container = FakeContainer(
+        settings=Settings(
+            default_access_scopes="public,team-default",
+            request_user_access_map="alice=public,team-a",
+        )
+    )
     app = create_app(container=container)
 
     with TestClient(app) as client:
         response = client.post(
             "/query",
-            json={"question": "general 채널 요약", "top_k": 3},
+            json={
+                "question": "general 채널 요약",
+                "top_k": 3,
+                "filters": {
+                    "channels": ["general", "dev"],
+                    "user_names": ["민수"],
+                    "date_from": "2024-01-01",
+                    "date_to": "2024-01-31",
+                },
+            },
             headers={
-                "X-Access-Scopes": "public,team-a",
+                "X-Access-Scopes": "public,malicious-scope",
                 "X-Request-User": "alice",
             },
         )
@@ -177,5 +212,28 @@ def test_query_endpoint_forwards_scope_and_user_headers() -> None:
             "access_scopes": ["public", "team-a"],
             "request_user": "alice",
             "top_k": 3,
+            "request_filters": {
+                "document_types": [],
+                "channels": ["general", "dev"],
+                "user_names": ["민수"],
+                "assignees": [],
+                "statuses": [],
+                "date_from": "2024-01-01",
+                "date_to": "2024-01-31",
+            },
         }
     ]
+
+
+def test_metadata_facets_endpoint_returns_issue_filters() -> None:
+    container = FakeContainer()
+    app = create_app(container=container)
+
+    with TestClient(app) as client:
+        response = client.get("/metadata/facets?document_type=issue")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["document_types"] == ["chat", "issue"]
+    assert data["assignees"] == ["Sujin"]
+    assert data["statuses"] == ["완료", "진행"]

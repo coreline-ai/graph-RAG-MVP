@@ -4,9 +4,11 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.config import Settings
+from app.container import ServiceContainer
 from app.main import create_app
 from app.schemas import DocumentMetadata, QueryResponse, QuerySource
 
@@ -27,19 +29,27 @@ class FakeIngestService:
         self,
         *,
         filename: str,
-        content: str,
+        content: str | None = None,
+        file_bytes: bytes | None = None,
         default_access_scopes: list[str] | None = None,
         source: str = "manual",
+        document_type: str = "chat",
+        replace_filename: bool = False,
+        byte_limit: int | None = None,
+        row_limit: int | None = None,
     ) -> DocumentMetadata:
-        if "INVALID" in content:
+        raw_content = content or (file_bytes.decode("utf-8") if file_bytes else "")
+        if "INVALID" in raw_content:
             raise ValueError("Invalid chat log format at line 1: INVALID")
         document = DocumentMetadata(
             document_id=f"doc-{len(self.documents) + 1}",
             filename=filename,
             source=source,
+            document_type=document_type,
             access_scopes=default_access_scopes or ["public"],
             total_messages=1,
             total_chunks=1,
+            ingest_summary={},
             created_at=datetime.now(timezone.utc),
         )
         self.documents[document.document_id] = document
@@ -56,7 +66,26 @@ class FakeIngestService:
 
 
 class FakeRetrievalService:
-    async def answer_query(self, *, question, access_scopes, request_user, top_k=None, debug=False):
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+
+    async def answer_query(
+        self,
+        *,
+        question,
+        access_scopes,
+        request_user,
+        top_k=None,
+        debug=False,
+        request_filters=None,
+    ):
+        self.calls.append(
+            {
+                "question": question,
+                "access_scopes": access_scopes,
+                "request_user": request_user,
+            }
+        )
         return QueryResponse(
             question=question,
             answer="ok",
@@ -78,6 +107,7 @@ class FakeContainer:
     )
     codex_proxy: FakeHealthComponent = field(default_factory=FakeHealthComponent)
     startup_errors: dict[str, str] = field(default_factory=dict)
+    ready: bool = True
     started: bool = False
     stopped: bool = False
 
@@ -147,11 +177,13 @@ def test_health_all_ok_returns_ok_status() -> None:
 
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
+    assert response.json()["ready"] is True
 
 
 def test_health_with_startup_errors_reported() -> None:
     container = FakeContainer()
     container.startup_errors["neo4j"] = "connection refused"
+    container.ready = False
     app = create_app(container=container)
 
     with TestClient(app) as client:
@@ -159,6 +191,9 @@ def test_health_with_startup_errors_reported() -> None:
 
     data = response.json()
     assert response.status_code == 200
+    assert data["status"] == "degraded"
+    assert data["ready"] is False
+    assert data["startup_errors"]["neo4j"] == "connection refused"
 
 
 # ---------------------------------------------------------------------------
@@ -166,7 +201,7 @@ def test_health_with_startup_errors_reported() -> None:
 # ---------------------------------------------------------------------------
 
 def test_query_without_headers_uses_defaults() -> None:
-    container = FakeContainer()
+    container = FakeContainer(settings=Settings(default_access_scopes="public,team-default"))
     app = create_app(container=container)
 
     with TestClient(app) as client:
@@ -177,3 +212,54 @@ def test_query_without_headers_uses_defaults() -> None:
 
     assert response.status_code == 200
     assert response.json()["answer"] == "ok"
+    assert container.retrieval.calls == [
+        {
+            "question": "테스트 질문",
+            "access_scopes": ["public", "team-default"],
+            "request_user": None,
+        }
+    ]
+
+
+class FakeBootstrapComponent:
+    def __init__(self, *, fail: bool = False, message: str = "boom") -> None:
+        self.fail = fail
+        self.message = message
+
+    async def bootstrap(self) -> None:
+        if self.fail:
+            raise RuntimeError(self.message)
+
+    async def healthcheck(self) -> str:
+        return "ok"
+
+    async def aclose(self) -> None:
+        return None
+
+    def close(self) -> None:
+        return None
+
+
+@pytest.mark.asyncio
+async def test_service_container_startup_records_bootstrap_errors_without_raising() -> None:
+    container = ServiceContainer(
+        settings=Settings(),
+        postgres=FakeBootstrapComponent(fail=True, message="pg down"),
+        neo4j=FakeBootstrapComponent(),
+        embedding_cache=FakeBootstrapComponent(),
+        embedding_provider=FakeHealthComponent("ok"),
+        codex_proxy=FakeHealthComponent("ok"),
+        chunking=object(),
+        behavior_labeler=object(),
+        issue_chunking=object(),
+        workbook_parser=object(),
+        graph_builder=object(),
+        query_analyzer=object(),
+        ingest=object(),
+        retrieval=object(),
+    )
+
+    await container.startup()
+
+    assert container.ready is False
+    assert container.startup_errors["postgres"] == "pg down"

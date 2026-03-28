@@ -1,0 +1,119 @@
+- id: overall_issue_count
+  question: 완료 이슈는 몇 건이야
+  expected_route: count
+  expected_count_kind: overall
+  required_source_types: [issue]
+  forbidden_source_types: [chat]
+  required_terms: ["Aggregate Summary:", "count_basis: matching_records"]
+  forbidden_terms: []
+  allow_no_chat: true
+  min_source_count: 1
+  max_source_count: 5
+
+- id: timeout_subtype_count
+  question: 최근 한 달 동안 timeout이나 gateway 성격의 장애 이슈가 몇 건 있었고 주요 조치가 뭐였는지 알려줘
+  expected_route: count
+  expected_count_kind: subtype
+  required_source_types: [issue]
+  forbidden_source_types: [chat]
+  required_terms: ["API gateway timeout 증가", "Aggregate Summary:"]
+  forbidden_terms: ["서버 배포 380차 완료했습니다"]
+  allow_no_chat: true
+  min_source_count: 1
+  max_source_count: 5
+
+- id: sujin_completed_issue_summary
+  question: Sujin의 완료된 이슈 요약
+  expected_route: standard
+  expected_count_kind: none
+  required_source_types: [issue]
+  forbidden_source_types: [chat]
+  required_terms: ["장문 요청 처리 중 GPU 메모리 부족 발생"]
+  forbidden_terms: []
+  allow_no_chat: true
+  min_source_count: 1
+  max_source_count: 5
+
+- id: gpu_mixed_with_chat
+  question: 최근 2주 GPU 메모리 이슈와 관련 대화 요약
+  expected_route: mixed_issue_chat
+  expected_count_kind: none
+  required_source_types: [issue, chat]
+  forbidden_source_types: []
+  required_terms: ["matching_chat_sources: 1", "GPU 메모리 부족"]
+  forbidden_terms: ["회의록 공유 부탁드립니다"]
+  allow_no_chat: false
+  min_source_count: 2
+  max_source_count: 6
+
+- id: timeout_mixed_without_chat
+  question: 최근 2주 timeout 이슈와 관련 대화 요약
+  expected_route: mixed_issue_chat
+  expected_count_kind: none
+  required_source_types: [issue]
+  forbidden_source_types: [chat]
+  required_terms: ["matching_chat_sources: 0", "이슈 근거만 제공합니다"]
+  forbidden_terms: ["회의록 공유 부탁드립니다"]
+  allow_no_chat: true
+  min_source_count: 1
+  max_source_count: 5
+
+- id: server_deploy_chat
+  question: 2024년 1월 5일 프로젝트C에서 서버 배포 관련 대화 알려줘
+  expected_route: standard
+  expected_count_kind: none
+  required_source_types: [chat]
+  forbidden_source_types: [issue]
+  required_terms: ["서버 배포 380차 완료했습니다"]
+  forbidden_terms: ["임베딩 버전 불일치"]
+  allow_no_chat: false
+  min_source_count: 1
+  max_source_count: 5
+
+- id: backend_recent_chat
+  question: 백엔드개발 최근 대화
+  expected_route: standard
+  expected_count_kind: none
+  required_source_types: [chat]
+  forbidden_source_types: [issue]
+  required_terms: ["운영 서버 반영은 오늘 진행합니다"]
+  forbidden_terms: []
+  allow_no_chat: false
+  min_source_count: 1
+  max_source_count: 5
+
+- id: jiho_hold_issue
+  question: Jiho가 담당한 보류 이슈가 어떤 유형인지 대표 사례 중심으로 설명해줘
+  expected_route: standard
+  expected_count_kind: none
+  required_source_types: [issue]
+  forbidden_source_types: [chat]
+  required_terms: ["메타데이터 필터 적용 시 관련 문서 누락"]
+  forbidden_terms: []
+  allow_no_chat: true
+  min_source_count: 1
+  max_source_count: 5
+
+- id: oom_flow
+  question: OOM 발견 후 어떤 수정이 이뤄졌나
+  expected_route: standard
+  expected_count_kind: none
+  required_source_types: [issue]
+  forbidden_source_types: [chat]
+  required_terms: ["배치 크기 제한", "장문 요청 처리 중 GPU 메모리 부족 발생"]
+  forbidden_terms: []
+  allow_no_chat: true
+  min_source_count: 1
+  max_source_count: 5
+
+- id: assignee_list
+  question: 담당자 전체 목록 알려줘
+  expected_route: standard
+  expected_count_kind: none
+  required_source_types: [issue]
+  forbidden_source_types: []
+  required_terms: ["담당자 목록", "Jiho", "Sujin"]
+  forbidden_terms: []
+  allow_no_chat: true
+  min_source_count: 1
+  max_source_count: 5

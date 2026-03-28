@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from functools import lru_cache
 from typing import Literal
 from urllib.parse import quote_plus
@@ -33,6 +34,11 @@ class Settings(BaseSettings):
     chunk_max_tokens: int = 256
     chunk_overlap_turns: int = 1
     chunk_merge_time_gap_seconds: int = 300
+    kss_min_length: int = 80
+    excel_row_max_chars: int = 600
+    api_issue_upload_max_bytes: int = 5 * 1024 * 1024
+    api_issue_upload_max_rows: int = 300
+    use_kiwi_keywords: bool = True
 
     embedding_provider: str = "local_transformer"
     embedding_model: str = "BAAI/bge-m3"
@@ -44,6 +50,7 @@ class Settings(BaseSettings):
     codex_proxy_api_style: Literal["auto", "legacy", "openai_responses"] = "auto"
     codex_model: str = "gpt-5.3-codex"
     codex_timeout_seconds: int = 45
+    request_user_access_map: str = ""
 
     graph_neighbor_hops: int = 1
     graph_next_window: int = 2
@@ -57,8 +64,6 @@ class Settings(BaseSettings):
     default_access_scopes: str = Field(default="public")
 
     model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
     )
@@ -76,6 +81,10 @@ class Settings(BaseSettings):
     def parsed_default_access_scopes(self) -> list[str]:
         return parse_access_scopes(self.default_access_scopes)
 
+    @property
+    def parsed_request_user_access_map(self) -> dict[str, list[str]]:
+        return parse_request_user_access_map(self.request_user_access_map)
+
 
 def parse_access_scopes(raw: str | list[str] | None) -> list[str]:
     if raw is None:
@@ -85,6 +94,54 @@ def parse_access_scopes(raw: str | list[str] | None) -> list[str]:
     return [item.strip() for item in raw.split(",") if item.strip()]
 
 
+def parse_request_user_access_map(raw: str | dict[str, str | list[str]] | None) -> dict[str, list[str]]:
+    if raw is None:
+        return {}
+    if isinstance(raw, dict):
+        return {
+            user.strip(): parse_access_scopes(scopes)
+            for user, scopes in raw.items()
+            if user and user.strip()
+        }
+
+    text = raw.strip()
+    if not text:
+        return {}
+
+    if text.startswith("{"):
+        parsed = json.loads(text)
+        if not isinstance(parsed, dict):
+            raise ValueError("request_user_access_map JSON must be an object")
+        return parse_request_user_access_map(parsed)
+
+    mapping: dict[str, list[str]] = {}
+    for entry in text.split(";"):
+        item = entry.strip()
+        if not item:
+            continue
+        user, separator, scopes = item.partition("=")
+        user = user.strip()
+        if not separator or not user:
+            raise ValueError(
+                "request_user_access_map entries must use 'user=scope1,scope2' format"
+            )
+        mapping[user] = parse_access_scopes(scopes)
+    return mapping
+
+
+def resolve_access_scopes_for_user(
+    *,
+    settings: Settings,
+    request_user: str | None,
+) -> list[str]:
+    normalized_user = (request_user or "").strip()
+    if normalized_user:
+        mapped = settings.parsed_request_user_access_map.get(normalized_user)
+        if mapped:
+            return mapped
+    return settings.parsed_default_access_scopes
+
+
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
-    return Settings()
+    return Settings(_env_file=".env", _env_file_encoding="utf-8")

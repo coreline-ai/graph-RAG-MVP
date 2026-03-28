@@ -11,6 +11,7 @@ from app.schemas import (
     DocumentMetadata,
     UploadFileResponse,
 )
+from app.services.workbook_parser import PayloadTooLargeError
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
@@ -26,10 +27,13 @@ async def create_document(
             content=payload.content,
             default_access_scopes=payload.default_access_scopes,
             source=payload.source,
+            document_type=payload.document_type,
         )
+    except PayloadTooLargeError as exc:
+        raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    return UploadFileResponse(document=document)
+    return UploadFileResponse(document=document, ingest_summary=document.ingest_summary)
 
 
 @router.post("/upload-file", response_model=UploadFileResponse, status_code=status.HTTP_201_CREATED)
@@ -37,26 +41,26 @@ async def upload_document_file(
     file: UploadFile = File(...),
     default_access_scopes: str = Form("public"),
     source: str = Form("upload"),
+    document_type: str = Form("auto"),
     container: ServiceContainer = Depends(get_container),
 ) -> UploadFileResponse:
-    try:
-        content = (await file.read()).decode("utf-8")
-    except UnicodeDecodeError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Uploaded file must be UTF-8 encoded text.",
-        ) from exc
+    file_bytes = await file.read()
 
     try:
         document = await container.ingest.ingest_document(
             filename=file.filename or "uploaded.txt",
-            content=content,
+            file_bytes=file_bytes,
             default_access_scopes=parse_access_scopes(default_access_scopes),
             source=source,
+            document_type=document_type,
+            byte_limit=container.settings.api_issue_upload_max_bytes if document_type in ("auto", "issue") else None,
+            row_limit=container.settings.api_issue_upload_max_rows if document_type in ("auto", "issue") else None,
         )
+    except PayloadTooLargeError as exc:
+        raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    return UploadFileResponse(document=document)
+    return UploadFileResponse(document=document, ingest_summary=document.ingest_summary)
 
 
 @router.get("", response_model=DocumentListResponse)

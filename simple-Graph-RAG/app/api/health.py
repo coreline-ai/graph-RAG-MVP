@@ -27,14 +27,17 @@ async def healthcheck(
     if startup_errors.get("neo4j"):
         neo4j_status = f"error:{startup_errors['neo4j']}"
 
-    degraded = any(
+    ready = getattr(container, "ready", not startup_errors)
+    degraded = (not ready) or any(
         status.startswith("error")
         for status in (postgres_status, neo4j_status, embedding_status, codex_status)
     )
     return HealthResponse(
         status="degraded" if degraded else "ok",
+        ready=ready,
         neo4j=neo4j_status,
         postgres=postgres_status,
         embedding=embedding_status,
         codex_proxy=codex_status,
+        startup_errors=startup_errors,
     )
