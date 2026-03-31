@@ -47,7 +47,8 @@ class Settings(BaseSettings):
     embedding_device: str = "cpu"
 
     codex_proxy_base_url: str = "http://127.0.0.1:8800"
-    codex_proxy_api_style: Literal["auto", "legacy", "openai_responses"] = "auto"
+    claude_proxy_base_url: str = "http://127.0.0.1:8800"
+    codex_proxy_api_style: Literal["auto", "legacy", "openai_responses", "openai_chat"] = "auto"
     codex_model: str = "gpt-5.3-codex"
     codex_timeout_seconds: int = 45
     request_user_access_map: str = ""

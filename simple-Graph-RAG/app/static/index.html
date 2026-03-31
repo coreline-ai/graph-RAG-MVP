@@ -1007,8 +1007,11 @@
         <div class="model-selector">
           <label class="model-label" for="modelSelect">LLM</label>
           <select class="model-select" id="modelSelect">
+            <optgroup label="Local">
+              <option value="Qwen3_5-9B-IQ4_XS" selected>Qwen3.5 9B (Local)</option>
+            </optgroup>
             <optgroup label="OpenAI">
-              <option value="gpt-5.4" selected>GPT-5.4</option>
+              <option value="gpt-5.4">GPT-5.4</option>
             </optgroup>
             <optgroup label="Anthropic">
               <option value="claude-sonnet-4-6">Claude Sonnet 4.6</option>
@@ -1492,9 +1495,13 @@
           container.textContent = 'No timing data';
           return;
         }
+        const wrapper = document.createElement('div');
+        wrapper.style.position = 'relative';
+        wrapper.style.width = '100%';
+        wrapper.style.height = '240px';
+        container.appendChild(wrapper);
         const canvas = document.createElement('canvas');
-        canvas.height = 220;
-        container.appendChild(canvas);
+        wrapper.appendChild(canvas);
         const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#2563EB';
         const red = getComputedStyle(document.documentElement).getPropertyValue('--accent-red').trim() || '#DC2626';
         new Chart(canvas, {
@@ -1558,22 +1565,45 @@
         formulaDiv.textContent = 'Click a source card to overlay scores';
         container.appendChild(formulaDiv);
 
-        // Wire source card clicks
+        // Wire source card clicks + auto-show all sources
+        const breakdowns = debug.score_breakdowns || [];
+        const sourceColors = ['rgba(37,99,235,0.8)', 'rgba(16,185,129,0.8)', 'rgba(245,158,11,0.8)', 'rgba(239,68,68,0.8)', 'rgba(139,92,246,0.8)'];
+        const sourceBgs = ['rgba(37,99,235,0.12)', 'rgba(16,185,129,0.12)', 'rgba(245,158,11,0.12)', 'rgba(239,68,68,0.12)', 'rgba(139,92,246,0.12)'];
+
+        // Auto-overlay all source scores on initial load
+        breakdowns.forEach((bd, idx) => {
+          chart.data.datasets.push({
+            label: `Source ${idx + 1}`,
+            data: [bd.vector_score, bd.graph_score, bd.entity_score, bd.metadata_score, bd.recency_score],
+            backgroundColor: sourceBgs[idx % sourceBgs.length],
+            borderColor: sourceColors[idx % sourceColors.length],
+            pointRadius: 4,
+          });
+        });
+        if (breakdowns.length > 0) {
+          chart.update();
+          const scores = breakdowns.map((bd, i) =>
+            `S${i+1}: ${bd.final_score.toFixed(3)}`
+          ).join(' | ');
+          formulaDiv.textContent = scores + ' — 카드 클릭 시 상세 수식';
+        }
+
         setTimeout(() => {
           parentContainer.closest('.bubble')?.querySelectorAll('.source-card').forEach((card, idx) => {
             card.style.cursor = 'pointer';
             card.addEventListener('click', () => {
               parentContainer.closest('.bubble')?.querySelectorAll('.source-card').forEach(c => c.classList.remove('radar-active'));
               card.classList.add('radar-active');
-              const bd = (debug.score_breakdowns || [])[idx];
+              const bd = breakdowns[idx];
               if (!bd) return;
               while (chart.data.datasets.length > 1) chart.data.datasets.pop();
               chart.data.datasets.push({
-                label: bd.chunk_id.slice(0, 10) + '...',
+                label: `Source ${idx + 1} (selected)`,
                 data: [bd.vector_score, bd.graph_score, bd.entity_score, bd.metadata_score, bd.recency_score],
-                backgroundColor: 'rgba(37,99,235,0.12)',
-                borderColor: 'rgba(37,99,235,0.8)',
-                pointRadius: 4,
+                backgroundColor: sourceBgs[idx % sourceBgs.length],
+                borderColor: sourceColors[idx % sourceColors.length],
+                pointRadius: 5,
+                borderWidth: 2,
               });
               chart.update();
               const final = bd.final_score.toFixed(4);

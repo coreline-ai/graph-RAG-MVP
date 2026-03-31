@@ -22,9 +22,10 @@ services:
     environment:
       NEO4J_AUTH: neo4j/graph-rag-password
       NEO4J_PLUGINS: '["graph-data-science"]'
-      NEO4J_server_memory_heap_initial__size: 128m
-      NEO4J_server_memory_heap_max__size: 128m
-      NEO4J_server_memory_pagecache_size: 64m
+      NEO4J_server_memory_heap_initial__size: 512m
+      NEO4J_server_memory_heap_max__size: 512m
+      NEO4J_server_memory_pagecache_size: 128m
+      NEO4J_server_memory_transaction_total_max: 256m
     ports:
       - "8747:7474"
       - "8768:7687"

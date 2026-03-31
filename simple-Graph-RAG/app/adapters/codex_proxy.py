@@ -15,7 +15,10 @@ class CodexProxyError(RuntimeError):
         self.message = message
 
 
-ProxyApiStyle = Literal["auto", "legacy", "openai_responses"]
+ProxyApiStyle = Literal["auto", "legacy", "openai_responses", "openai_chat"]
+
+
+_LOCAL_MODELS = {"Qwen3_5-9B-IQ4_XS"}
 
 
 class CodexProxyClient:
@@ -25,10 +28,18 @@ class CodexProxyClient:
         self._resolved_api_style: ProxyApiStyle | None = (
             None if settings.codex_proxy_api_style == "auto" else settings.codex_proxy_api_style
         )
-        self._client = httpx.AsyncClient(
+        self._local_client = httpx.AsyncClient(
             base_url=settings.codex_proxy_base_url,
             timeout=settings.codex_timeout_seconds,
         )
+        self._client = self._local_client
+        self._claude_client = httpx.AsyncClient(
+            base_url=getattr(settings, "claude_proxy_base_url", "http://127.0.0.1:8800"),
+            timeout=settings.codex_timeout_seconds,
+        )
+
+    def _is_local_model(self, model: str) -> bool:
+        return model in _LOCAL_MODELS
 
     async def generate(
         self,
@@ -38,65 +49,85 @@ class CodexProxyClient:
         model_override: str | None = None,
         metadata: dict[str, object] | None = None,
     ) -> CodexGenerateResponse:
+        model = model_override or self.settings.codex_model
         payload = CodexGenerateRequest(
-            model=model_override or self.settings.codex_model,
+            model=model,
             system_prompt=system_prompt,
             user_prompt=user_prompt,
             metadata=metadata or {},
         )
-        protocol_errors: list[str] = []
 
-        for api_style in self._candidate_api_styles():
-            try:
-                if api_style == "legacy":
-                    response = await self._generate_legacy(payload)
-                else:
-                    response = await self._generate_openai_responses(payload)
-                self._resolved_api_style = api_style
-                return response
-            except CodexProxyError as exc:
-                if exc.code != "protocol_mismatch":
-                    raise
-                protocol_errors.append(exc.message)
+        if self._is_local_model(model):
+            return await self._generate_openai_chat(payload)
 
-        message = "; ".join(protocol_errors) or "no compatible proxy endpoint found"
-        raise CodexProxyError("llm_unavailable", message)
+        return await self._generate_via_claude_proxy(payload)
+
+    async def _generate_via_claude_proxy(
+        self, payload: CodexGenerateRequest
+    ) -> CodexGenerateResponse:
+        body = {
+            "system_prompt": payload.system_prompt,
+            "user_prompt": payload.user_prompt,
+            "model": payload.model,
+        }
+        try:
+            response = await self._claude_client.post("/generate", json=body)
+        except (httpx.TimeoutException, httpx.HTTPError) as exc:
+            raise CodexProxyError("llm_unavailable", str(exc)) from exc
+        if response.status_code >= 400:
+            raise CodexProxyError("llm_unavailable", response.text)
+        parsed = response.json()
+        return self._parse_legacy_response(parsed)
 
     async def healthcheck(self) -> str:
-        last_error: str | None = None
-        protocol_mismatch = False
-        for api_style in self._candidate_api_styles():
-            path = "/health" if api_style == "legacy" else "/api/v1/health"
-            try:
-                response = await self._client.get(path)
-            except httpx.HTTPError as exc:
-                last_error = f"error:{exc}"
-                continue
-
-            if response.status_code in {404, 405}:
-                protocol_mismatch = True
-                continue
-            if response.status_code < 500:
-                self._resolved_api_style = api_style
-                return "ok"
-            return f"error:{response.status_code}"
-
-        if protocol_mismatch:
-            return "error:no compatible proxy health endpoint"
-        if last_error is not None:
-            return last_error
-        return "error:proxy unavailable"
+        errors = []
+        # Check Claude Proxy
+        try:
+            r = await self._claude_client.get("/health")
+            if r.status_code >= 500:
+                errors.append(f"claude_proxy:{r.status_code}")
+        except httpx.HTTPError as exc:
+            errors.append(f"claude_proxy:{exc}")
+        # Check Local LLM
+        try:
+            r = await self._local_client.get("/v1/models")
+            if r.status_code >= 500:
+                errors.append(f"local_llm:{r.status_code}")
+        except httpx.HTTPError as exc:
+            errors.append(f"local_llm:{exc}")
+        if not errors:
+            return "ok"
+        if len(errors) == 2:
+            return f"error:{'; '.join(errors)}"
+        return f"partial:{errors[0]}"
 
     def _candidate_api_styles(self) -> tuple[ProxyApiStyle, ...]:
         if self._resolved_api_style is not None:
             return (self._resolved_api_style,)
         if self._configured_api_style != "auto":
             return (self._configured_api_style,)
-        return ("legacy", "openai_responses")
+        return ("openai_chat", "legacy", "openai_responses")
 
     async def _generate_legacy(self, payload: CodexGenerateRequest) -> CodexGenerateResponse:
         body = await self._post_json("/generate", payload.model_dump())
         return self._parse_legacy_response(body)
+
+    async def _generate_openai_chat(
+        self,
+        payload: CodexGenerateRequest,
+    ) -> CodexGenerateResponse:
+        body = await self._post_json(
+            "/chat/completions",
+            {
+                "model": payload.model,
+                "messages": [
+                    {"role": "system", "content": payload.system_prompt},
+                    {"role": "user", "content": payload.user_prompt},
+                ],
+                "max_tokens": 4096,
+            },
+        )
+        return self._parse_openai_chat_response(body)
 
     async def _generate_openai_responses(
         self,
@@ -170,6 +201,22 @@ class CodexProxyClient:
         )
 
     @staticmethod
+    def _parse_openai_chat_response(body: dict[str, Any]) -> CodexGenerateResponse:
+        choices = body.get("choices")
+        if not isinstance(choices, list) or not choices:
+            raise CodexProxyError("llm_protocol_error", str(body))
+        message = choices[0].get("message", {})
+        text = message.get("content") or ""
+        if not text:
+            raise CodexProxyError("llm_protocol_error", f"empty content: {body}")
+        return CodexGenerateResponse(
+            text=text,
+            model=body.get("model"),
+            finish_reason=choices[0].get("finish_reason"),
+            raw=body,
+        )
+
+    @staticmethod
     def _parse_openai_responses_body(body: dict[str, Any]) -> CodexGenerateResponse:
         text_fragments: list[str] = []
         output = body.get("output")
@@ -206,3 +253,4 @@ class CodexProxyClient:
 
     async def aclose(self) -> None:
         await self._client.aclose()
+        await self._claude_client.aclose()
