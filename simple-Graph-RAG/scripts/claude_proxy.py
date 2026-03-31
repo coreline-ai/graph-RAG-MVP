@@ -16,8 +16,6 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import os
-import select
 import shutil
 import subprocess
 import sys
@@ -77,8 +75,18 @@ class StreamWorker:
             stderr=subprocess.PIPE,
             text=False,
         )
-        os.set_blocking(self.proc.stdout.fileno(), False)
-        os.set_blocking(self.proc.stderr.fileno(), False)
+        # Use a background thread to read stdout (Windows doesn't support
+        # select() on pipes, so non-blocking I/O is not an option).
+        self._stdout_lines: Queue = Queue()
+        self._reader_thread = threading.Thread(
+            target=self._read_stdout_loop, daemon=True,
+        )
+        self._reader_thread.start()
+        # Drain stderr in background to prevent buffer deadlock
+        self._stderr_thread = threading.Thread(
+            target=self._drain_stderr_loop, daemon=True,
+        )
+        self._stderr_thread.start()
         log.info("Spawned worker pid=%d model=%s", self.proc.pid, self.model)
 
     def is_alive(self) -> bool:
@@ -90,11 +98,27 @@ class StreamWorker:
                         self.proc.pid if self.proc else "?")
             self._spawn()
 
+    def _read_stdout_loop(self):
+        """Background thread: read stdout line-by-line into a Queue."""
+        try:
+            for raw_line in self.proc.stdout:
+                self._stdout_lines.put(raw_line)
+        except Exception:
+            pass
+
+    def _drain_stderr_loop(self):
+        """Background thread: consume stderr to prevent pipe deadlock."""
+        try:
+            for _ in self.proc.stderr:
+                pass
+        except Exception:
+            pass
+
     def call(self, user_prompt: str, timeout: float = 120) -> tuple[str, float]:
         """Send a prompt and wait for the result. Thread-safe via lock."""
         with self.lock:
             self._ensure_alive()
-            # Drain any leftover output from previous call
+            # Drain any leftover lines from previous call
             self._drain()
             request_session_id = str(uuid.uuid4())
 
@@ -115,60 +139,42 @@ class StreamWorker:
                 self.proc.stdin.write(msg.encode())
                 self.proc.stdin.flush()
 
-            # Read until we get a result message
-            buffer = b""
+            # Read from the thread-safe queue until we get a result message
             start = time.perf_counter()
             while time.perf_counter() - start < timeout:
-                ready, _, _ = select.select(
-                    [self.proc.stdout, self.proc.stderr], [], [], 0.3
-                )
-                for fd in ready:
-                    data = fd.read(65536)
-                    if data:
-                        if fd == self.proc.stdout:
-                            buffer += data
-                        else:
-                            # Log stderr but don't fail
-                            pass
+                try:
+                    raw_line = self._stdout_lines.get(timeout=0.3)
+                except Empty:
+                    # Check if process died
+                    if self.proc.poll() is not None:
+                        raise RuntimeError("CLI process died during request")
+                    continue
 
-                # Parse lines looking for result
-                text = buffer.decode("utf-8", errors="replace")
-                for line in text.split("\n"):
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        obj = json.loads(line)
-                        if obj.get("type") == "result":
-                            elapsed = time.perf_counter() - t0
-                            result_text = obj.get("result", "")
-                            if obj.get("is_error"):
-                                raise RuntimeError(
-                                    f"CLI error: {result_text[:300]}"
-                                )
-                            return result_text, elapsed
-                    except json.JSONDecodeError:
-                        continue
-
-                # Check if process died
-                if self.proc.poll() is not None:
-                    raise RuntimeError("CLI process died during request")
+                line = raw_line.decode("utf-8", errors="replace").strip()
+                if not line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                    if obj.get("type") == "result":
+                        elapsed = time.perf_counter() - t0
+                        result_text = obj.get("result", "")
+                        if obj.get("is_error"):
+                            raise RuntimeError(
+                                f"CLI error: {result_text[:300]}"
+                            )
+                        return result_text, elapsed
+                except json.JSONDecodeError:
+                    continue
 
             raise TimeoutError(f"No result within {timeout}s")
 
     def _drain(self):
-        """Drain any leftover output from stdout/stderr."""
-        for fd in (self.proc.stdout, self.proc.stderr):
+        """Drain any leftover lines from the stdout queue."""
+        while not self._stdout_lines.empty():
             try:
-                while True:
-                    ready, _, _ = select.select([fd], [], [], 0)
-                    if not ready:
-                        break
-                    data = fd.read(65536)
-                    if not data:
-                        break
-            except Exception:
-                pass
+                self._stdout_lines.get_nowait()
+            except Empty:
+                break
 
     def terminate(self):
         if self.proc and self.proc.poll() is None:

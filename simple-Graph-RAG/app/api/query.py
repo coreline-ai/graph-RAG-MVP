@@ -26,4 +26,5 @@ async def query_documents(
         top_k=payload.top_k,
         debug=payload.debug,
         request_filters=payload.filters,
+        model_override=payload.model,
     )

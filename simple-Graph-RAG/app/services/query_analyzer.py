@@ -7,7 +7,14 @@ from app.config import Settings, get_settings
 from app.schemas import QueryAnalysis, QueryFilters
 from app.services.korean_nlp import build_name_pattern, extract_keywords, normalize_status
 
-_STATUS_KEYWORDS = ("완료", "완료된", "끝난", "진행", "진행중", "진행 중", "대기", "대기중", "미완료")
+_STATUS_KEYWORDS = (
+    "완료", "완료된", "끝난",
+    "진행", "진행중", "진행 중",
+    "대기", "대기중",
+    "미완료",
+    "검증", "검증중", "검증 중",
+    "분석", "분석중", "분석 중",
+)
 _ISSUE_KEYWORDS = (
     "이슈", "담당", "등록일", "문제 원인", "업무지시", "진행", "완료",
     "해결", "재현", "검증", "원인", "수정", "후속", "오류", "에러", "장애",
@@ -23,14 +30,9 @@ _SPECIAL_ENTITY_ALIASES = {
     "timeout": ("timeout", "타임아웃"),
     "타임아웃": ("timeout", "타임아웃"),
 }
-_ENTITY_BLACKLIST = {
-    "관련", "관련된", "관련해", "관련해서", "대화", "요약", "정리", "내용", "기록",
-    "흐름", "무슨", "일이", "최근", "완료", "진행", "진행중", "이슈", "이슈와",
-    "이슈를", "이슈가", "이슈는", "담당", "알려줘", "말해줘", "알려", "말", "보여줘",
-    "주세요", "어떤", "무엇", "있어", "있나", "설명해줘",
-    "알리", "보이", "말하", "설명하", "정리하", "요약하",
-    "발견", "수정", "해결", "검증", "후속", "이뤄지",
-}
+from app.services.entity_stopwords import QUERY_ENTITY_BLACKLIST
+
+_ENTITY_BLACKLIST = QUERY_ENTITY_BLACKLIST
 _ENTITY_PARTICLE_SUFFIXES = ("와", "과", "의", "이", "가", "을", "를", "은", "는", "도", "만")
 
 

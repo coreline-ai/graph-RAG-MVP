@@ -271,6 +271,7 @@ class RetrievalService:
         top_k: int | None = None,
         debug: bool = False,
         request_filters: QueryRequestFilters | None = None,
+        model_override: str | None = None,
     ) -> QueryResponse:
         timer = PipelineTimer(enabled=debug)
         top_k = self.settings.top_k if top_k is None else top_k
@@ -338,6 +339,7 @@ class RetrievalService:
             timer=timer,
             metadata_context=metadata_context,
             latest_event_date=latest_event_date,
+            model_override=model_override,
         )
 
     async def _execute_standard_query(
@@ -351,6 +353,7 @@ class RetrievalService:
         timer: PipelineTimer,
         metadata_context: dict[str, object],
         latest_event_date: date | None,
+        model_override: str | None = None,
     ) -> QueryResponse:
         aggregate_context = None
         if self._should_attach_aggregate_context(analysis):
@@ -362,7 +365,12 @@ class RetrievalService:
             )
 
         timer.start_step("embedding")
-        query_embedding = (await self.embedding_provider.embed_texts([analysis.search_text or analysis.clean_question]))[0]
+        # Use clean_question (natural language) instead of search_text (kiwi keywords).
+        # kiwi splits compound terms like "타임아웃"→"타임"+"아웃" and
+        # "BGE-M3-Retrieve"→"BGE"+"M"+"3"+"Retrieve", which degrades
+        # BGE-M3 embedding quality.  search_text is still used for
+        # entity matching / lexical scoring via query_match_terms().
+        query_embedding = (await self.embedding_provider.embed_texts([analysis.clean_question]))[0]
         timer.end_step("embedding")
 
         timer.start_step("pgvector_search")
@@ -569,6 +577,7 @@ class RetrievalService:
             llm_response = await self.codex_proxy.generate(
                 system_prompt=system_prompt,
                 user_prompt=user_prompt,
+                model_override=model_override,
                 metadata={
                     "request_user": request_user,
                     "retrieval_strategy": "filter_pgvector_graph_hybrid",

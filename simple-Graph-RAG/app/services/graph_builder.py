@@ -4,6 +4,7 @@ import re
 from typing import Any
 
 from app.schemas import ChunkRecord
+from app.services.entity_stopwords import GRAPH_ENTITY_STOPWORDS
 
 # Korean particle suffixes to strip from tokens
 _KOREAN_PARTICLES = re.compile(r"(은|는|이|가|을|를|의|에|로|와|과|으로|에서|까지|부터|마다|도|만)$")
@@ -13,19 +14,7 @@ _CAMELCASE_RE = re.compile(r"[A-Z][a-z]+(?:[A-Z][a-z]+)+")
 
 
 class GraphBuilder:
-    STOPWORDS = {
-        # Common verbs / endings
-        "합니다", "했습니다", "됩니다", "됐습니다", "입니다", "있습니다",
-        "없습니다", "드립니다", "주세요", "하겠습니다", "바랍니다",
-        "부탁드립니다", "감사합니다",
-        # Meta / filler words
-        "확인", "관련", "대화", "이슈", "기록", "정리", "관련된",
-        "오늘", "내일", "이번", "최근", "현재", "전체",
-        "그리고", "하지만", "그래서", "그런데", "왜냐하면",
-        "여기", "거기", "어디", "무엇", "어떤", "어떻게",
-        # Chat noise
-        "네네", "아아", "ㅎㅎ", "ㅋㅋ", "감사", "수고",
-    }
+    STOPWORDS = GRAPH_ENTITY_STOPWORDS
 
     TOKEN_PATTERN = re.compile(r"[A-Za-z][A-Za-z0-9_.-]+|#[0-9]+|[가-힣]{2,}")
 

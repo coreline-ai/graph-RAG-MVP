@@ -72,6 +72,7 @@ class ChunkRecord(BaseModel):
 
 class QueryRequest(BaseModel):
     question: str
+    model: str | None = None
     top_k: int = Field(default=10, ge=1, le=50)
     debug: bool = False
     filters: "QueryRequestFilters | None" = None

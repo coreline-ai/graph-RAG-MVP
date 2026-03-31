@@ -48,7 +48,7 @@ class MixedIssueChatStrategy:
             )
 
         timer.start_step("embedding")
-        query_embedding = (await self.service.embedding_provider.embed_texts([analysis.search_text or analysis.clean_question]))[0]
+        query_embedding = (await self.service.embedding_provider.embed_texts([analysis.clean_question]))[0]
         timer.end_step("embedding")
 
         issue_filters = self._issue_filters(analysis)

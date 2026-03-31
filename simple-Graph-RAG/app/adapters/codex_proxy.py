@@ -35,10 +35,11 @@ class CodexProxyClient:
         *,
         system_prompt: str,
         user_prompt: str,
+        model_override: str | None = None,
         metadata: dict[str, object] | None = None,
     ) -> CodexGenerateResponse:
         payload = CodexGenerateRequest(
-            model=self.settings.codex_model,
+            model=model_override or self.settings.codex_model,
             system_prompt=system_prompt,
             user_prompt=user_prompt,
             metadata=metadata or {},

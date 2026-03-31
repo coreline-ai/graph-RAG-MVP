@@ -17,6 +17,7 @@ _LABEL_PATTERNS: list[tuple[str, tuple[str, ...]]] = [
 ]
 
 _FLOW_NAME_MAP: dict[frozenset[str], str] = {
+    # ── Single-label flows ──
     frozenset({"discovery"}): "원인 발견",
     frozenset({"attempt", "failure"}): "시도 및 실패",
     frozenset({"attempt", "fix"}): "시도 및 수정",
@@ -24,7 +25,20 @@ _FLOW_NAME_MAP: dict[frozenset[str], str] = {
     frozenset({"result", "verification"}): "결과 검증",
     frozenset({"verification"}): "검증",
     frozenset({"next_action"}): "후속 조치",
+    frozenset({"result"}): "영향 결과",
     frozenset({"analysis_misc"}): "분석 메모",
+    # ── Within-group merges (same semantic group can merge) ──
+    # Cause group: discovery can absorb attempt/fix/failure/verification
+    frozenset({"discovery", "fix"}): "원인 및 수정",
+    frozenset({"discovery", "attempt"}): "원인 및 시도",
+    frozenset({"discovery", "attempt", "fix"}): "원인·시도·수정",
+    frozenset({"discovery", "attempt", "failure"}): "원인·시도·실패",
+    frozenset({"discovery", "verification"}): "원인 및 검증",
+    # Impact group: result + next_action stay together
+    frozenset({"result", "next_action"}): "영향 및 조치",
+    # NOTE: cross-group combos like {discovery, result} are intentionally
+    # ABSENT so that cause-group and impact-group stay as separate chunks
+    # for fine-grained semantic search.
 }
 
 _SECTION_HEADING_RE = re.compile(r"^(원인 요약|확인 근거|기술 판단|영향 범위|추가 조치)\s*:")
@@ -82,13 +96,25 @@ class BehaviorLabeler:
         if len(sections) <= 1:
             return []
 
-        sentences: list[str] = []
+        # Keep each heading+body as a single sentence so the heading label
+        # propagates to the entire section during _label_sentence.
+        merged_sections: list[str] = []
+        pending_heading: str | None = None
         for section in sections:
             if _SECTION_HEADING_RE.match(section):
-                sentences.append(section)
-                continue
-            sentences.extend(self._split_plain_text(section))
-        return [sentence for sentence in sentences if sentence]
+                # Flush any previous heading that had no body
+                if pending_heading is not None:
+                    merged_sections.append(pending_heading)
+                pending_heading = section
+            elif pending_heading is not None:
+                # Attach body to its heading
+                merged_sections.append(f"{pending_heading} {section}")
+                pending_heading = None
+            else:
+                merged_sections.append(section)
+        if pending_heading is not None:
+            merged_sections.append(pending_heading)
+        return [s for s in merged_sections if s]
 
     def _split_plain_text(self, text: str) -> list[str]:
         normalized = text.strip()
@@ -120,6 +146,9 @@ class BehaviorLabeler:
         if heading_match:
             mapped = _SECTION_LABEL_MAP.get(heading_match.group(1))
             if mapped:
+                # Heading label takes priority — don't mix in body keyword labels.
+                # This ensures the heading's semantic role propagates to the whole
+                # merged section and prevents merge-breaking label fragmentation.
                 return [mapped]
         labels = [label for label, keywords in _LABEL_PATTERNS if any(keyword in sentence for keyword in keywords)]
         return labels or ["analysis_misc"]
