@@ -427,9 +427,12 @@ EMBEDDING_MAX_LENGTH=512
 ## Testing
 
 ```bash
-# Simple Graph-RAG
+# Simple Graph-RAG — Unit tests
 cd simple-Graph-RAG
 .venv/bin/python -m pytest tests/ -v
+
+# Simple Graph-RAG — Golden Q&A evaluation (GAS/AAR)
+EMBEDDING_DEVICE=mps python scripts/evaluate_golden_qa.py
 
 # Hybrid Graph-RAG
 cd hybrid-Graph-RAG
@@ -437,6 +440,30 @@ uv run pytest tests/ -v
 
 # Integration tests (requires running infrastructure)
 RUN_INTEGRATION=1 uv run pytest tests/integration/ -v
+```
+
+## RAG Quality Evaluation
+
+Simple Graph-RAG은 3-Layer 평가 체계를 적용합니다:
+
+| Layer | 지표 | 역할 | 구현 방식 |
+|-------|------|------|-----------|
+| **Layer 1** | Recall@k, Ranking Score | 검색이 잘 됐냐 | 5-Factor Ranking (vector+graph+entity+metadata+recency) |
+| **Layer 2 (GAS)** | Grounded Answer Score | 근거 기반으로 맞게 답했냐 | Golden Q&A 키워드 매칭 + 프롬프트 제어 |
+| **Layer 3 (AAR)** | Abstain Accuracy Rate | 모르면 멈췄냐 | Golden Q&A 거부 패턴 검증 + 프롬프트 제어 |
+
+### 설계 결정
+
+- **벡터 유사도 threshold**: 미적용 — 무관한 질문(cosine 0.36)과 정상 질문(0.43)이 겹쳐 hard threshold가 정상 검색을 파괴할 위험
+- **프로그래밍적 근거 판단**: 미적용 — LLM 프롬프트가 이미 AAR 역할 수행 (없는 데이터 질문 시 "정보가 없습니다" 응답 확인)
+- **Golden Q&A 자동 평가**: 적용 — 30건 핵심 쿼리 + 기대 키워드로 GAS/AAR 자동 회귀 방지
+
+```bash
+# 평가 실행
+EMBEDDING_DEVICE=mps python scripts/evaluate_golden_qa.py
+
+# AAR만 실행
+EMBEDDING_DEVICE=mps python scripts/evaluate_golden_qa.py --tag aar
 ```
 
 ---

@@ -1,0 +1,250 @@
+[
+  {
+    "id": "gas_01",
+    "tag": ["gas", "assignee", "status"],
+    "question": "Sujin 담당 이슈 중 진행중인 것 정리해줘",
+    "expect_keywords": ["Sujin", "진행중"],
+    "expect_min_sources": 1,
+    "expect_mode": "llm"
+  },
+  {
+    "id": "gas_02",
+    "tag": ["gas", "entity"],
+    "question": "EmbeddingCache 관련 이슈 원인 분석해줘",
+    "expect_keywords": ["EmbeddingCache"],
+    "expect_min_sources": 1,
+    "expect_mode": "llm"
+  },
+  {
+    "id": "gas_03",
+    "tag": ["gas", "comparison"],
+    "question": "커넥션 풀 고갈과 메모리 누수 이슈 비교해줘",
+    "expect_keywords": ["커넥션 풀"],
+    "expect_min_sources": 2,
+    "expect_mode": "llm"
+  },
+  {
+    "id": "gas_04",
+    "tag": ["gas", "entity"],
+    "question": "GraphRAG-Core 모듈 관련 이슈 전체 보여줘",
+    "expect_keywords": ["GraphRAG-Core"],
+    "expect_min_sources": 1,
+    "expect_mode": "llm"
+  },
+  {
+    "id": "gas_05",
+    "tag": ["gas", "alias"],
+    "question": "OOM 크래시 발생 이슈 원인과 조치 알려줘",
+    "expect_keywords": ["OOM", "크래시"],
+    "expect_min_sources": 1,
+    "expect_mode": "llm"
+  },
+  {
+    "id": "gas_06",
+    "tag": ["gas", "assignee", "date"],
+    "question": "Hwan 담당 2025년 이슈 알려줘",
+    "expect_keywords": ["Hwan", "2025"],
+    "expect_min_sources": 1,
+    "expect_mode": "llm"
+  },
+  {
+    "id": "gas_07",
+    "tag": ["gas", "timeline"],
+    "question": "2025년 하반기 이슈 타임라인 정리해줘",
+    "expect_keywords": ["2025"],
+    "expect_min_sources": 1,
+    "expect_mode": "llm"
+  },
+  {
+    "id": "gas_08",
+    "tag": ["gas", "assignee", "status"],
+    "question": "Eunji 담당 분석중 이슈 상세 내용",
+    "expect_keywords": ["Eunji", "분석중"],
+    "expect_min_sources": 1,
+    "expect_mode": "llm"
+  },
+  {
+    "id": "gas_09",
+    "tag": ["gas", "entity", "status"],
+    "question": "MetadataStore 관련 완료된 이슈",
+    "expect_keywords": ["MetadataStore", "완료"],
+    "expect_min_sources": 1,
+    "expect_mode": "llm"
+  },
+  {
+    "id": "gas_10",
+    "tag": ["gas", "entity", "flow"],
+    "question": "DNS 장애가 시스템에 미친 영향 범위 알려줘",
+    "expect_keywords": ["DNS"],
+    "expect_min_sources": 1,
+    "expect_mode": "llm"
+  },
+  {
+    "id": "gas_11",
+    "tag": ["gas", "entity", "flow"],
+    "question": "MigrationRunner 이슈의 후속 조치 내용",
+    "expect_keywords": ["MigrationRunner"],
+    "expect_min_sources": 1,
+    "expect_mode": "llm"
+  },
+  {
+    "id": "gas_12",
+    "tag": ["gas", "multi_assignee"],
+    "question": "Donghyun과 Jiho가 담당한 이슈 비교",
+    "expect_keywords": ["Donghyun", "Jiho"],
+    "expect_min_sources": 2,
+    "expect_mode": "llm"
+  },
+  {
+    "id": "gas_13",
+    "tag": ["gas", "recency"],
+    "question": "최근 등록된 이슈 5건 보여줘",
+    "expect_keywords": ["이슈"],
+    "expect_min_sources": 3,
+    "expect_mode": "llm"
+  },
+  {
+    "id": "gas_14",
+    "tag": ["gas", "status", "list"],
+    "question": "검증중인 이슈 목록과 담당자 알려줘",
+    "expect_keywords": ["검증중"],
+    "expect_min_sources": 1,
+    "expect_mode": "llm"
+  },
+  {
+    "id": "gas_15",
+    "tag": ["gas", "multi_entity"],
+    "question": "SessionTracker와 ContextMerger 관련 이슈",
+    "expect_keywords": ["SessionTracker", "ContextMerger"],
+    "expect_min_sources": 1,
+    "expect_mode": "llm"
+  },
+  {
+    "id": "gas_16",
+    "tag": ["gas", "entity", "flow"],
+    "question": "QualityChecker 이슈의 근본 원인 분석",
+    "expect_keywords": ["QualityChecker"],
+    "expect_min_sources": 1,
+    "expect_mode": "llm"
+  },
+  {
+    "id": "gas_17",
+    "tag": ["gas", "date"],
+    "question": "2026년 1월에 등록된 이슈 전체 정리",
+    "expect_keywords": ["2026"],
+    "expect_min_sources": 1,
+    "expect_mode": "llm"
+  },
+  {
+    "id": "gas_18",
+    "tag": ["gas", "summary"],
+    "question": "전체 이슈 현황 요약해줘",
+    "expect_keywords": ["이슈"],
+    "expect_min_sources": 1,
+    "expect_mode": "llm"
+  },
+  {
+    "id": "gas_19",
+    "tag": ["gas", "entity", "alias"],
+    "question": "VectorIndex 모듈에서 타임아웃 발생 이슈",
+    "expect_keywords": ["VectorIndex"],
+    "expect_min_sources": 1,
+    "expect_mode": "llm"
+  },
+  {
+    "id": "gas_20",
+    "tag": ["gas", "relationship"],
+    "question": "OOM과 커넥션 풀 고갈의 연관 관계 분석",
+    "expect_keywords": ["OOM", "커넥션"],
+    "expect_min_sources": 1,
+    "expect_mode": "llm"
+  },
+  {
+    "id": "gas_21",
+    "tag": ["gas", "complex_filter"],
+    "question": "Hyunwoo 담당 GraphRAG-Core 진행중 이슈 상세",
+    "expect_keywords": ["Hyunwoo", "GraphRAG-Core"],
+    "expect_min_sources": 1,
+    "expect_mode": "llm"
+  },
+  {
+    "id": "gas_22",
+    "tag": ["gas", "complex_filter"],
+    "question": "2025년 Taehun이 처리한 완료 이슈 요약",
+    "expect_keywords": ["Taehun", "완료"],
+    "expect_min_sources": 1,
+    "expect_mode": "llm"
+  },
+  {
+    "id": "aar_01",
+    "tag": ["aar", "nonexistent_project"],
+    "question": "프로젝트 P999 현재 상태 알려줘",
+    "expect_keywords": [],
+    "expect_abstain_keywords": ["없습니다", "확인되지", "포함되어 있지 않", "존재하지 않"],
+    "expect_min_sources": 0,
+    "expect_mode": "any"
+  },
+  {
+    "id": "aar_02",
+    "tag": ["aar", "nonexistent_user"],
+    "question": "김영희가 작성한 보고서 찾아줘",
+    "expect_keywords": [],
+    "expect_abstain_keywords": ["없습니다", "확인되지", "존재하지 않"],
+    "expect_min_sources": 0,
+    "expect_mode": "any"
+  },
+  {
+    "id": "aar_03",
+    "tag": ["aar", "nonexistent_date"],
+    "question": "2030년 이슈 알려줘",
+    "expect_keywords": [],
+    "expect_abstain_keywords": ["없습니다", "존재하지 않", "범위를 벗어"],
+    "expect_min_sources": 0,
+    "expect_mode": "any"
+  },
+  {
+    "id": "aar_04",
+    "tag": ["aar", "nonexistent_entity"],
+    "question": "MongoDB 관련 이슈 알려줘",
+    "expect_keywords": [],
+    "expect_abstain_keywords": ["없습니다", "확인되지", "언급이 없", "관련.*없", "찾지 못했", "다음 질문"],
+    "expect_min_sources": 0,
+    "expect_mode": "any"
+  },
+  {
+    "id": "aar_05",
+    "tag": ["aar", "out_of_scope"],
+    "question": "내일 서울 날씨 알려줘",
+    "expect_keywords": [],
+    "expect_abstain_keywords": ["없습니다", "관련.*없", "제공.*없", "범위"],
+    "expect_min_sources": 0,
+    "expect_mode": "any"
+  },
+  {
+    "id": "aar_06",
+    "tag": ["aar", "nonexistent_status"],
+    "question": "폐기된 이슈 목록 보여줘",
+    "expect_keywords": [],
+    "expect_abstain_keywords": ["없습니다", "확인되지", "존재하지"],
+    "expect_min_sources": 0,
+    "expect_mode": "any"
+  },
+  {
+    "id": "aar_07",
+    "tag": ["aar", "hallucination_trap"],
+    "question": "Kubernetes 클러스터 장애 이슈 분석해줘",
+    "expect_keywords": [],
+    "expect_abstain_keywords": ["없습니다", "확인되지", "관련.*없", "언급"],
+    "expect_min_sources": 0,
+    "expect_mode": "any"
+  },
+  {
+    "id": "aar_08",
+    "tag": ["aar", "hallucination_trap"],
+    "question": "2024년 12월 31일 긴급 배포 사고 상세 내용",
+    "expect_keywords": [],
+    "expect_abstain_keywords": ["없습니다", "확인되지", "존재하지", "관련.*없", "찾지 못했"],
+    "expect_min_sources": 0,
+    "expect_mode": "any"
+  }
+]
